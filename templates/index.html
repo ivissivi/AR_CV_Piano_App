@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR CV Piano App</title>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: rgb(63,94,251);
+            background: radial-gradient(circle, rgba(63,94,251,1) 0%, rgba(252,70,107,1) 100%);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #ecf0f1;
+        }
+
+        header {
+            color: #ecf0f1;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 4em;
+            letter-spacing: 2px;
+        }
+
+        img {
+            border: 3px solid #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            margin-top: 30px;
+            width: 90%;
+            max-width: 800px;
+            height: auto;
+            transition: transform 0.3s ease-in-out;
+        }
+
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AR CV Piano App 🎹</h1>
+    </header>
+    <img src="{{ url_for('video_feed') }}" alt="Video Feed">
+</body>
+</html>
