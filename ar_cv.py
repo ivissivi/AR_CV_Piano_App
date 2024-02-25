@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from flask import Flask, render_template, Response
 import mido
+import json
 
 app = Flask(__name__)
 phone_camera_url = 'http://192.168.101.15:8080/video'
@@ -10,6 +11,9 @@ color_to_track = np.array([30, 150, 50])
 piano_keys = ["C", "D", "E", "F", "G", "A", "B", "C"]
 
 prev_detected_keys = set()
+
+with open('piano_key_mapping.json', 'r') as json_file:
+    midi_to_piano_keys = json.load(json_file)
 
 def map_keys(x, w):
     key_index = int((x + w / 2) * len(piano_keys) / 640) % len(piano_keys)
@@ -52,10 +56,13 @@ def generate_frames():
 
                 for msg in inport.iter_pending():
                     if msg.type == 'note_on':
+                        note = str(msg.note)
+                        velocity = str(msg.velocity)
+                        key = midi_to_piano_keys.get(note, "Unknown Key")
                         if msg.velocity == 0:
-                            print(f"Key released: {msg.note}, Velocity: {msg.velocity}")
+                            print(f"Released: {note}, Velocity: {velocity}, Key: {key}")
                         else:
-                            print(f"Key pressed: {msg.note}, Velocity: {msg.velocity}")
+                            print(f"Pressed: {note}, Velocity: {velocity}, Key: {key}")
 
 
                 frame = cv2.GaussianBlur(frame, (3, 3), 0)
