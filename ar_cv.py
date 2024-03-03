@@ -17,23 +17,17 @@ piano_keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "
 class PianoKeyRecognition:
     def __init__(self):
         self.prev_detected_keys = set()
+        self.key_positions = {}
 
     def detect_and_outline_keys(self, frame):
         frame = cv2.resize(frame, (640, 480))
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        color_ranges = [
-            (np.array([20, 100, 100]), np.array([40, 255, 255]))
-        ]
+        color_range = (np.array([20, 100, 100]), np.array([40, 255, 255]))
 
-        combined_mask = np.zeros_like(frame[:, :, 0])
-        for lower, upper in color_ranges:
-            combined_mask |= cv2.inRange(hsv_frame, lower, upper)
+        combined_mask = cv2.inRange(hsv_frame, color_range[0], color_range[1])
 
         contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Filter out small contours (noise)
-        contours = [contour for contour in contours if cv2.contourArea(contour) > 50]
 
         detected_keys = set()
 
@@ -43,25 +37,42 @@ class PianoKeyRecognition:
                 cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
 
-                key_index = int((cx / 640) * len(piano_keys))
+                # Calculate relative position of the key
+                relative_position = cx / frame.shape[1]
 
-                if 0 <= key_index < len(piano_keys):
-                    detected_keys.add(piano_keys[key_index])
+                # Find the closest key based on relative position
+                key_index = min(len(piano_keys) - 1, max(0, int(round(relative_position * (len(piano_keys) - 1)))))
 
-                    text = piano_keys[key_index]
-                    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
-                    cv2.rectangle(frame, (cx - 5, cy - 5 - text_size[1]), (cx - 5 + text_size[0], cy - 5), (0, 0, 0), cv2.FILLED)
-                    cv2.putText(frame, text, (cx - 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+                key = piano_keys[key_index]
+                detected_keys.add(key)
 
-        # Print the number of rectangles detected
-        print(f"Number of rectangles detected: {len(contours)}")
+                text = piano_keys[key_index]
+                text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]  # Increase text size
+                text_position = (cx - text_size[0] // 2, cy + text_size[1] // 2)  # Center text
 
-        # Reorder the detected keys based on the centroid y-coordinate
-        detected_keys = sorted(detected_keys, key=lambda x: cv2.moments(contours[piano_keys.index(x)])["m01"])
+                cv2.rectangle(frame, (text_position[0] - 5, text_position[1] - 5 - text_size[1]),
+                              (text_position[0] - 5 + text_size[0] + 10, text_position[1] + 5),
+                              (0, 0, 0), cv2.FILLED)
+                cv2.putText(frame, text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+                if text in self.key_positions:
+                    line_start = (cx, cy)
+                    line_end = (cx, frame.shape[0])
+                    cv2.line(frame, line_start, line_end, (0, 0, 255), 2)
+
+                self.key_positions[text] = (cx, cy)
+
+        if "C" in detected_keys:
+            detected_keys = {"C"}
+
+        detected_keys = sorted(detected_keys, key=lambda x: self.key_positions.get(x, (0, 0))[0])
 
         new_keys = set(detected_keys) - set(self.prev_detected_keys)
         for new_key in new_keys:
             print(f"Key {new_key} detected")
+
+        # Print the current order of keys
+        print("Current order of keys:", detected_keys)
 
         self.prev_detected_keys = detected_keys
 
@@ -76,17 +87,29 @@ def generate_frames():
 
             if not success:
                 text_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(text_frame, 'No input available', (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(text_frame, 'No input available', (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                            (255, 255, 255), 2, cv2.LINE_AA)
                 ret, buffer = cv2.imencode('.jpg', text_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             else:
                 frame = recognition.detect_and_outline_keys(frame)
                 frame = cv2.GaussianBlur(frame, (1, 1), 0)
                 ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
 
+                note = "Unknown Note"
+
                 for msg in inport.iter_pending():
                     if msg.type == 'note_on':
-                        note, velocity, key = str(msg.note), str(msg.velocity), midi_to_piano_keys.get(str(msg.note), "Unknown Key")
-                        print(f"{'Released' if msg.velocity == 0 else 'Pressed'}: {note}, Velocity: {velocity}, Key: {key}")
+                        note = str(msg.note)
+                        key = midi_to_piano_keys.get(note, "Unknown Key")
+                        velocity = str(msg.velocity)
+
+                        print(f"{'Released' if msg.velocity == 0 else 'Pressed'}: Note: {note}, Velocity: {velocity}, Key: {key}")
+
+                        if key in recognition.key_positions:
+                            print(f"Removing red line for Key: {key}")
+                            recognition.key_positions.pop(key)
+                        else:
+                            print(f"No red line found for Key: {key}. Existing keys: {list(recognition.key_positions.keys())}")
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
