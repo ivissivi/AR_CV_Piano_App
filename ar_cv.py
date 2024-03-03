@@ -19,7 +19,7 @@ class PianoKeyRecognition:
         self.prev_detected_keys = set()
         self.key_positions = {}
 
-    def detect_and_outline_keys(self, frame):
+    def detect_and_outline_keys(self, frame, key_pressed):
         frame = cv2.resize(frame, (640, 480))
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
@@ -37,18 +37,16 @@ class PianoKeyRecognition:
                 cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
 
-                # Calculate relative position of the key
                 relative_position = cx / frame.shape[1]
 
-                # Find the closest key based on relative position
                 key_index = min(len(piano_keys) - 1, max(0, int(round(relative_position * (len(piano_keys) - 1)))))
 
                 key = piano_keys[key_index]
                 detected_keys.add(key)
 
                 text = piano_keys[key_index]
-                text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]  # Increase text size
-                text_position = (cx - text_size[0] // 2, cy + text_size[1] // 2)  # Center text
+                text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                text_position = (cx - text_size[0] // 2, cy + text_size[1] // 2)
 
                 cv2.rectangle(frame, (text_position[0] - 5, text_position[1] - 5 - text_size[1]),
                               (text_position[0] - 5 + text_size[0] + 10, text_position[1] + 5),
@@ -62,17 +60,16 @@ class PianoKeyRecognition:
 
                 self.key_positions[text] = (cx, cy)
 
-        if "C" in detected_keys:
-            detected_keys = {"C"}
-
         detected_keys = sorted(detected_keys, key=lambda x: self.key_positions.get(x, (0, 0))[0])
 
         new_keys = set(detected_keys) - set(self.prev_detected_keys)
         for new_key in new_keys:
             print(f"Key {new_key} detected")
 
-        # Print the current order of keys
         print("Current order of keys:", detected_keys)
+
+        if key_pressed:
+            self.key_positions.clear()
 
         self.prev_detected_keys = detected_keys
 
@@ -91,11 +88,11 @@ def generate_frames():
                             (255, 255, 255), 2, cv2.LINE_AA)
                 ret, buffer = cv2.imencode('.jpg', text_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             else:
-                frame = recognition.detect_and_outline_keys(frame)
+                key_pressed = any(msg.type == 'note_on' for msg in inport.iter_pending())
+
+                frame = recognition.detect_and_outline_keys(frame, key_pressed)
                 frame = cv2.GaussianBlur(frame, (1, 1), 0)
                 ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
-
-                note = "Unknown Note"
 
                 for msg in inport.iter_pending():
                     if msg.type == 'note_on':
