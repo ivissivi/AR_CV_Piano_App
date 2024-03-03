@@ -32,28 +32,34 @@ class PianoKeyRecognition:
 
         contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # Filter out small contours (noise)
+        contours = [contour for contour in contours if cv2.contourArea(contour) > 50]
+
         detected_keys = set()
 
         for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            aspect_ratio = float(w) / h
+            M = cv2.moments(contour)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
 
-            if 0.1 < aspect_ratio < 10.0 and aspect_ratio < 1.0:
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-
-                mid_point = x + w // 2
-
-                key_index = int((mid_point / 640) * len(piano_keys))
+                key_index = int((cx / 640) * len(piano_keys))
 
                 if 0 <= key_index < len(piano_keys):
                     detected_keys.add(piano_keys[key_index])
 
                     text = piano_keys[key_index]
                     text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
-                    cv2.rectangle(frame, (x + 5, y - 20), (x + 5 + text_size[0], y - 15), (0, 0, 0), cv2.FILLED)
-                    cv2.putText(frame, text, (x + 5, y - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+                    cv2.rectangle(frame, (cx - 5, cy - 5 - text_size[1]), (cx - 5 + text_size[0], cy - 5), (0, 0, 0), cv2.FILLED)
+                    cv2.putText(frame, text, (cx - 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
 
-        new_keys = detected_keys - self.prev_detected_keys
+        # Print the number of rectangles detected
+        print(f"Number of rectangles detected: {len(contours)}")
+
+        # Reorder the detected keys based on the centroid y-coordinate
+        detected_keys = sorted(detected_keys, key=lambda x: cv2.moments(contours[piano_keys.index(x)])["m01"])
+
+        new_keys = set(detected_keys) - set(self.prev_detected_keys)
         for new_key in new_keys:
             print(f"Key {new_key} detected")
 
