@@ -18,8 +18,9 @@ class PianoKeyRecognition:
     def __init__(self):
         self.prev_detected_keys = set()
         self.key_positions = {}
+        self.temporary_highlight_key = None
 
-    def detect_and_outline_keys(self, frame, key_pressed):
+    def detect_and_outline_keys(self, frame):
         frame = cv2.resize(frame, (640, 480))
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
@@ -56,20 +57,25 @@ class PianoKeyRecognition:
                 if text in self.key_positions:
                     line_start = (cx, cy)
                     line_end = (cx, frame.shape[0])
-                    cv2.line(frame, line_start, line_end, (0, 0, 255), 2)
 
-                self.key_positions[text] = (cx, cy)
+                    if self.temporary_highlight_key and text == self.temporary_highlight_key:
+                        # Draw a temporary red line for the highlighted key
+                        cv2.line(frame, line_start, line_end, (0, 0, 255), 2)
+
+                    elif text in self.prev_detected_keys:
+                        # Draw a permanent red line for pressed keys
+                        cv2.line(frame, line_start, line_end, (0, 0, 255), 2)
+
+                    self.key_positions[text] = (cx, cy)
 
         detected_keys = sorted(detected_keys, key=lambda x: self.key_positions.get(x, (0, 0))[0])
 
         new_keys = set(detected_keys) - set(self.prev_detected_keys)
         for new_key in new_keys:
             print(f"Key {new_key} detected")
+            self.temporary_highlight_key = new_key
 
-        print("Current order of keys:", detected_keys)
-
-        if key_pressed:
-            self.key_positions.clear()
+        # print("Current order of keys:", detected_keys)
 
         self.prev_detected_keys = detected_keys
 
@@ -88,25 +94,26 @@ def generate_frames():
                             (255, 255, 255), 2, cv2.LINE_AA)
                 ret, buffer = cv2.imencode('.jpg', text_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             else:
-                key_pressed = any(msg.type == 'note_on' for msg in inport.iter_pending())
-
-                frame = recognition.detect_and_outline_keys(frame, key_pressed)
+                frame = recognition.detect_and_outline_keys(frame)
                 frame = cv2.GaussianBlur(frame, (1, 1), 0)
                 ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
 
+                note = "Unknown Note"
+
                 for msg in inport.iter_pending():
-                    if msg.type == 'note_on':
+                    if msg.type == 'note_on' or msg.type == 'note_off':
                         note = str(msg.note)
                         key = midi_to_piano_keys.get(note, "Unknown Key")
                         velocity = str(msg.velocity)
 
-                        print(f"{'Released' if msg.velocity == 0 else 'Pressed'}: Note: {note}, Velocity: {velocity}, Key: {key}")
-
-                        if key in recognition.key_positions:
-                            print(f"Removing red line for Key: {key}")
-                            recognition.key_positions.pop(key)
-                        else:
-                            print(f"No red line found for Key: {key}. Existing keys: {list(recognition.key_positions.keys())}")
+                        if msg.type == 'note_on' and msg.velocity > 0:
+                            # Key pressed
+                            print(f'Pressed: Note: {note}, Velocity: {velocity}, Key: {key}')
+                            recognition.key_positions[key] = (recognition.key_positions.get(key, (0, 0))[0], frame.shape[0])
+                        elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
+                            # Key released
+                            print(f'Released: Note: {note}, Velocity: {velocity}, Key: {key}')
+                            recognition.key_positions.pop(key, None)
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
