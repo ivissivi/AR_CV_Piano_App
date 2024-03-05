@@ -3,16 +3,20 @@ import numpy as np
 from flask import Flask, render_template, Response
 import mido
 import json
+import pygame
 
 app = Flask(__name__)
 phone_camera_url = 'http://192.168.101.15:8080/video'
 camera = cv2.VideoCapture(phone_camera_url)
-piano_keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C"]
+piano_keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C1"]
 
-song = ["C", "D", "D", "C", "A", "F#", "G", "B", "A", "A#", "B", "C"]
+song = ["C", "C", "D", "C", "F", "E", "C", "C", "D", "C", "G", "F", "C", "C", "C1", "A", "F", "F", "E", "D", "A#", "A#", "A", "F", "G", "F"]
 
 with open('piano_key_mapping.json', 'r') as json_file:
     midi_to_piano_keys = json.load(json_file)
+
+# Initialize Pygame mixer
+pygame.mixer.init()
 
 class PianoKeyRecognition:
     def __init__(self, frame_size=(640, 480), num_keys=13):
@@ -20,8 +24,8 @@ class PianoKeyRecognition:
         self.num_keys = num_keys
         self.key_positions = {}
         self.key_pressed = {key: False for key in piano_keys}
-        self.song_index = 0  # Track the index of the current key in the song
-        self.red_line_start = None  # Track the start position for the red line
+        self.song_index = 0
+        self.red_line_start = None
 
     def detect_and_outline_keys(self, frame):
         frame = cv2.resize(frame, self.frame_size)
@@ -38,8 +42,8 @@ class PianoKeyRecognition:
         contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[0])
 
         for key in piano_keys:
-            red_line_start = None  # Reset red line for each key
-            first_occurrence = True  # Track the first occurrence of the key
+            red_line_start = None
+            first_occurrence = True
             for index, contour in enumerate(contours):
                 x, y, w, h = cv2.boundingRect(contour)
                 current_key = piano_keys[index % self.num_keys]
@@ -68,7 +72,6 @@ class PianoKeyRecognition:
         if self.song_index < len(song) - 1:
             self.song_index += 1
         else:
-            # Reset to the beginning of the song if the end is reached
             self.song_index = 0
 
     def generate_frames(self):
@@ -94,8 +97,9 @@ class PianoKeyRecognition:
                             else:
                                 recognition.key_pressed[key] = True
                                 print(f"Pressed: {note}, Velocity: {velocity}, Key: {key}")
+                                note_sound = pygame.mixer.Sound(f"notes/{key}.wav")
+                                note_sound.play()
                                 if key == song[self.song_index]:
-                                    # Move to the next key in the song
                                     self.move_to_next_key()
 
                     frame = cv2.GaussianBlur(frame, (1, 1), 0)
