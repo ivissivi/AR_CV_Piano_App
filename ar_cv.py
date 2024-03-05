@@ -19,6 +19,7 @@ class PianoKeyRecognition:
         self.frame_size = frame_size
         self.num_keys = num_keys
         self.key_positions = {}
+        self.key_pressed = False
 
     def detect_and_outline_keys(self, frame):
         frame = cv2.resize(frame, self.frame_size)
@@ -48,7 +49,7 @@ class PianoKeyRecognition:
             cv2.rectangle(frame, (x, y - text_background_height), (x + w, y), (0, 0, 0), -1)
             cv2.putText(frame, key, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
 
-            if key == "C":
+            if key == "C" and not self.key_pressed:
                 red_line_start = (x + w // 2, y)
 
         if red_line_start is not None:
@@ -77,8 +78,10 @@ def generate_frames():
                         velocity = str(msg.velocity)
                         key = midi_to_piano_keys.get(note, "Unknown Key")
                         if msg.velocity == 0:
+                            recognition.key_pressed = False
                             print(f"Released: {note}, Velocity: {velocity}, Key: {key}")
                         else:
+                            recognition.key_pressed = True
                             print(f"Pressed: {note}, Velocity: {velocity}, Key: {key}")
 
                 frame = cv2.GaussianBlur(frame, (1, 1), 0)
