@@ -19,7 +19,9 @@ class PianoKeyRecognition:
         self.frame_size = frame_size
         self.num_keys = num_keys
         self.key_positions = {}
-        self.key_pressed = False
+        self.key_pressed = {key: False for key in piano_keys}
+        self.song_index = 0  # Track the index of the current key in the song
+        self.red_line_start = None  # Track the start position for the red line
 
     def detect_and_outline_keys(self, frame):
         frame = cv2.resize(frame, self.frame_size)
@@ -35,60 +37,74 @@ class PianoKeyRecognition:
 
         contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[0])
 
-        red_line_start = None
+        for key in piano_keys:
+            red_line_start = None  # Reset red line for each key
+            first_occurrence = True  # Track the first occurrence of the key
+            for index, contour in enumerate(contours):
+                x, y, w, h = cv2.boundingRect(contour)
+                current_key = piano_keys[index % self.num_keys]
 
-        for index, contour in enumerate(contours):
-            x, y, w, h = cv2.boundingRect(contour)
-            key = piano_keys[index % self.num_keys]
+                self.key_positions[current_key] = (x, y)
 
-            self.key_positions[key] = (x, y)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                text_background_height = 25
+                cv2.rectangle(frame, (x, y - text_background_height), (x + w, y), (0, 0, 0), -1)
+                cv2.putText(frame, current_key, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
 
-            text_background_height = 25
-            cv2.rectangle(frame, (x, y - text_background_height), (x + w, y), (0, 0, 0), -1)
-            cv2.putText(frame, key, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+                if current_key == key and not self.key_pressed[key]:
+                    if first_occurrence:
+                        red_line_start = (x + w // 2, y)
+                        first_occurrence = False
 
-            if key == "C" and not self.key_pressed:
-                red_line_start = (x + w // 2, y)
-
-        if red_line_start is not None:
-            red_line_end = (red_line_start[0], self.frame_size[1])
-            cv2.line(frame, red_line_start, red_line_end, (0, 0, 255), 2)
+            if red_line_start is not None and key == song[self.song_index]:
+                self.red_line_start = red_line_start
+                red_line_end = (red_line_start[0], self.frame_size[1])
+                cv2.line(frame, red_line_start, red_line_end, (0, 0, 255), 2)
 
         return frame
 
+    def move_to_next_key(self):
+        if self.song_index < len(song) - 1:
+            self.song_index += 1
+        else:
+            # Reset to the beginning of the song if the end is reached
+            self.song_index = 0
+
+    def generate_frames(self):
+        with mido.open_input('Digital Keyboard 0') as inport:
+            while True:
+                success, frame = camera.read()
+                if not success:
+                    text_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.putText(text_frame, 'No input available', (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2,
+                                cv2.LINE_AA)
+                    ret, buffer = cv2.imencode('.jpg', text_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                else:
+                    frame = self.detect_and_outline_keys(frame)
+
+                    for msg in inport.iter_pending():
+                        if msg.type == 'note_on':
+                            note = str(msg.note)
+                            velocity = str(msg.velocity)
+                            key = midi_to_piano_keys.get(note, "Unknown Key")
+                            if msg.velocity == 0:
+                                recognition.key_pressed[key] = False
+                                print(f"Released: {note}, Velocity: {velocity}, Key: {key}")
+                            else:
+                                recognition.key_pressed[key] = True
+                                print(f"Pressed: {note}, Velocity: {velocity}, Key: {key}")
+                                if key == song[self.song_index]:
+                                    # Move to the next key in the song
+                                    self.move_to_next_key()
+
+                    frame = cv2.GaussianBlur(frame, (1, 1), 0)
+                    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+
 recognition = PianoKeyRecognition()
-
-def generate_frames():
-    with mido.open_input('Digital Keyboard 0') as inport:
-        while True:
-            success, frame = camera.read()
-            if not success:
-                text_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(text_frame, 'No input available', (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2,
-                            cv2.LINE_AA)
-                ret, buffer = cv2.imencode('.jpg', text_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            else:
-                frame = recognition.detect_and_outline_keys(frame)
-
-                for msg in inport.iter_pending():
-                    if msg.type == 'note_on':
-                        note = str(msg.note)
-                        velocity = str(msg.velocity)
-                        key = midi_to_piano_keys.get(note, "Unknown Key")
-                        if msg.velocity == 0:
-                            recognition.key_pressed = False
-                            print(f"Released: {note}, Velocity: {velocity}, Key: {key}")
-                        else:
-                            recognition.key_pressed = True
-                            print(f"Pressed: {note}, Velocity: {velocity}, Key: {key}")
-
-                frame = cv2.GaussianBlur(frame, (1, 1), 0)
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
-
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
 @app.route('/')
 def index():
@@ -96,7 +112,7 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(recognition.generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
