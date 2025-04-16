@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR CV Piano App</title>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: rgb(63,94,251);
+            background: radial-gradient(circle, rgba(63,94,251,1) 0%, rgba(252,70,107,1) 100%);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #ecf0f1;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+        }
+
+        header {
+            color: #ecf0f1;
+            padding: 20px;
+            text-align: center;
+            width: 100%;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 4em;
+            letter-spacing: 2px;
+        }
+
+        .content {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            width: 100%;
+        }
+
+        .video-container, .qr-container {
+            flex: 1;
+            min-width: 300px;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #videoElement {
+            border: 3px solid #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            margin-top: 20px;
+        }
+
+        .instructions {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            max-width: 600px;
+        }
+
+        .camera-controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                flex-direction: column;
+            }
+            
+            h1 {
+                font-size: 2.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AR CV Piano App 🎹</h1>
+        </header>
+        
+        <div class="content">
+            <div class="video-container">
+                <video id="videoElement" autoplay playsinline></video>
+                <div class="camera-controls">
+                    <button id="startButton">Start Camera</button>
+                    <button id="stopButton" disabled>Stop Camera</button>
+                </div>
+            </div>
+            
+            {% if qr_code %}
+            <div class="qr-container">
+                <div class="instructions">
+                    <h2>Scan to Connect</h2>
+                    <p>Use your phone to scan this QR code and connect to the application</p>
+                </div>
+                <img src="{{ url_for('qr_code') }}" alt="QR Code" class="qr-code">
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('videoElement');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        let stream = null;
+
+        // Function to start the camera
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment', // Use back camera
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                video.srcObject = stream;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                
+                // Send video stream to server
+                sendVideoToServer();
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                alert('Error accessing camera. Please make sure you have granted camera permissions.');
+            }
+        }
+
+        // Function to stop the camera
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                startButton.disabled = false;
+                stopButton.disabled = true;
+            }
+        }
+
+        // Function to send video frames to server
+        function sendVideoToServer() {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            
+            function captureFrame() {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    context.drawImage(video, 0, 0);
+                    
+                    // Send frame to server
+                    canvas.toBlob((blob) => {
+                        const formData = new FormData();
+                        formData.append('frame', blob);
+                        
+                        fetch('/upload_frame', {
+                            method: 'POST',
+                            body: formData
+                        }).catch(err => console.error('Error sending frame:', err));
+                    }, 'image/jpeg', 0.8);
+                }
+                
+                if (stream) {
+                    requestAnimationFrame(captureFrame);
+                }
+            }
+            
+            captureFrame();
+        }
+
+        // Event listeners
+        startButton.addEventListener('click', startCamera);
+        stopButton.addEventListener('click', stopCamera);
+    </script>
+</body>
+</html>
