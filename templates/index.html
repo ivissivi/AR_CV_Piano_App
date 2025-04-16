@@ -3,222 +3,953 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR CV Piano App</title>
+    <title>AR Piano App - Mobile</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"></script>
     <style>
         body {
-            font-family: 'Roboto', sans-serif;
-            background: rgb(63,94,251);
-            background: radial-gradient(circle, rgba(63,94,251,1) 0%, rgba(252,70,107,1) 100%);
             margin: 0;
             padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            color: #ecf0f1;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
         }
-
         .container {
+            height: 100%;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            width: 100%;
-            max-width: 1200px;
-            padding: 20px;
         }
-
-        header {
-            color: #ecf0f1;
-            padding: 20px;
-            text-align: center;
-            width: 100%;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 4em;
-            letter-spacing: 2px;
-        }
-
-        .content {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 20px;
-            width: 100%;
-        }
-
-        .video-container, .qr-container {
-            flex: 1;
-            min-width: 300px;
-            max-width: 600px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        #videoElement {
-            border: 3px solid #ffffff;
-            border-radius: 10px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-            width: 100%;
-            max-width: 100%;
-            height: auto;
-            transform: scaleX(-1); /* Mirror the video */
-        }
-
-        .qr-code {
-            width: 200px;
-            height: 200px;
-            margin-top: 20px;
-        }
-
-        .instructions {
-            text-align: center;
-            margin-top: 20px;
+        .title {
+            font-size: 24px;
             padding: 15px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            max-width: 600px;
+            background: linear-gradient(45deg, #b388ff, #e1bee7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
         }
-
-        .camera-controls {
-            margin-top: 20px;
+        .mode-select {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
             display: flex;
-            gap: 10px;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
         }
-
-        button {
-            padding: 10px 20px;
+        .mode-select.hidden {
+            display: none;
+        }
+        .mode-select-content {
+            background: rgba(40, 40, 40, 0.9);
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .mode-select h2 {
+            margin: 0 0 30px 0;
+            font-size: 24px;
+            color: white;
+            text-align: center;
+        }
+        .mode-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .mode-select .btn {
+            width: 250px;
+            padding: 20px 30px;
+            font-size: 18px;
+            border-radius: 15px;
+            background: linear-gradient(45deg, #b388ff, #e1bee7);
             border: none;
-            border-radius: 5px;
-            background: #4CAF50;
             color: white;
             cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .mode-select .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .mode-select .btn:active {
+            transform: translateY(0);
+        }
+        .video-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #000;
+            display: none;
+            z-index: 1;
+        }
+        .video-container.active {
+            display: block;
+        }
+        .video-container.fullscreen {
+            position: fixed;
+            z-index: 2000;
+        }
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .controls {
+            position: fixed;
+            bottom: -150px; /* Start hidden */
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            transition: bottom 0.3s ease;
+            z-index: 1000;
+        }
+        .controls.open {
+            bottom: 0;
+        }
+        .toggle-controls {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            width: 50px;
+            height: 30px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 1001;
+            transition: transform 0.3s ease;
+        }
+        .toggle-controls.open {
+            transform: translateX(-50%) rotate(180deg);
+        }
+        .toggle-controls::after {
+            content: '▲';
+            color: white;
+            font-size: 12px;
+        }
+        .btn {
+            background: linear-gradient(45deg, #b388ff, #e1bee7);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
             font-size: 16px;
-            transition: background 0.3s;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 200px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
-
-        button:hover {
-            background: #45a049;
+        .btn:active {
+            transform: scale(0.95);
         }
-
-        button:disabled {
-            background: #cccccc;
+        .btn:disabled {
+            opacity: 0.5;
             cursor: not-allowed;
         }
-
-        @media (max-width: 768px) {
-            .content {
-                flex-direction: column;
-            }
-            
-            h1 {
-                font-size: 2.5em;
-            }
+        .btn.selected {
+            background: linear-gradient(45deg, #e1bee7, #b388ff);
+            box-shadow: 0 0 10px rgba(177, 136, 255, 0.5);
+        }
+        .status {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            border-radius: 25px;
+            background-color: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 100;
+            transition: opacity 0.3s;
+            opacity: 1;
+        }
+        .status.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .status.error {
+            color: #ff6b6b;
+        }
+        .status.success {
+            color: #4ecdc4;
+        }
+        .debug {
+            position: fixed;
+            bottom: 80px;
+            left: 10px;
+            right: 10px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            background-color: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: none;
+            z-index: 100;
+        }
+        .fullscreen .title,
+        .fullscreen .mode-select,
+        .fullscreen .debug {
+            display: none;
+        }
+        .fullscreen .video-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        .fullscreen .status {
+            opacity: 0;
+        }
+        .fullscreen .status:hover {
+            opacity: 1;
+        }
+        .hand-tracking {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 100;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        .hand-tracking:hover {
+            opacity: 1;
+        }
+        .hand-tracking .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .hand-tracking .status.detected {
+            background-color: #b388ff;
+        }
+        .hand-tracking .status.not-detected {
+            background-color: #e1bee7;
+        }
+        #handCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+        }
+        .camera-select {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 1000;
+            display: none;
+        }
+        .camera-select.active {
+            display: block;
+        }
+        .camera-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .camera-option {
+            background: rgba(179, 136, 255, 0.2);
+            border: 1px solid #b388ff;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .camera-option:hover {
+            background: rgba(179, 136, 255, 0.4);
+        }
+        .camera-option.selected {
+            background: rgba(179, 136, 255, 0.6);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>AR CV Piano App 🎹</h1>
-        </header>
-        
-        <div class="content">
-            <div class="video-container">
-                <video id="videoElement" autoplay playsinline></video>
-                <div class="camera-controls">
-                    <button id="startButton">Start Camera</button>
-                    <button id="stopButton" disabled>Stop Camera</button>
+        <h1 class="title">AR Piano App</h1>
+        <div id="modeSelect" class="mode-select">
+            <div class="mode-select-content">
+                <h2>Choose Viewing Mode</h2>
+                <div class="mode-buttons">
+                    <button id="localMode" class="btn">📱 View on Phone</button>
+                    <button id="desktopMode" class="btn">🖥️ Stream to Desktop</button>
                 </div>
             </div>
-            
-            {% if qr_code %}
-            <div class="qr-container">
-                <div class="instructions">
-                    <h2>Scan to Connect</h2>
-                    <p>Use your phone to scan this QR code and connect to the application</p>
-                </div>
-                <img src="{{ url_for('qr_code') }}" alt="QR Code" class="qr-code">
-            </div>
-            {% endif %}
         </div>
+        <div class="video-container">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="handCanvas"></canvas>
+        </div>
+        <div class="hand-tracking">
+            <span class="status not-detected"></span>
+            <span>Hand Tracking</span>
+        </div>
+        <div class="toggle-controls" id="toggleControls"></div>
+        <div class="controls" id="controls">
+            <button id="startButton" class="btn" style="display: none">Start Camera</button>
+            <button id="stopButton" class="btn" disabled>Stop Camera</button>
+            <button id="toggleFullscreen" class="btn" disabled>Fullscreen</button>
+        </div>
+        <div id="status" class="status"></div>
+        <div id="debug" class="debug"></div>
     </div>
 
     <script>
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000
+        });
         const video = document.getElementById('videoElement');
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
+        const toggleFullscreen = document.getElementById('toggleFullscreen');
+        const localMode = document.getElementById('localMode');
+        const desktopMode = document.getElementById('desktopMode');
+        const status = document.getElementById('status');
+        const debug = document.getElementById('debug');
+        const container = document.querySelector('.container');
+        const videoContainer = document.querySelector('.video-container');
+        
         let stream = null;
+        let isStreaming = false;
+        let frameCount = 0;
+        let lastFrameTime = 0;
+        let isLocalMode = true;
+        const TARGET_FPS = 15;
+        const FRAME_INTERVAL = 1000 / TARGET_FPS;
+        const MAX_WIDTH = 640;
+        const MAX_HEIGHT = 480;
 
-        // Function to start the camera
-        async function startCamera() {
+        const toggleControls = document.getElementById('toggleControls');
+        const controls = document.getElementById('controls');
+        let isControlsOpen = false;
+
+        // Hand tracking setup
+        const handCanvas = document.getElementById('handCanvas');
+        const handCtx = handCanvas.getContext('2d');
+        const handTrackingStatus = document.querySelector('.hand-tracking .status');
+        let hands = null;
+        let lastHandsTime = 0;
+
+        const switchCamera = document.getElementById('switchCamera');
+        let currentCamera = 'back';
+        let currentStream = null;
+
+        const cameraSelect = document.getElementById('cameraSelect');
+        const cameraOptions = document.getElementById('cameraOptions');
+        let availableCameras = [];
+
+        function updateStatus(message, isError = false) {
+            status.textContent = message;
+            status.className = 'status ' + (isError ? 'error' : 'success');
+            status.classList.remove('hidden');
+            
+            // Auto-hide success messages after 3 seconds
+            if (!isError) {
+                setTimeout(() => {
+                    status.classList.add('hidden');
+                }, 3000);
+            }
+        }
+
+        function logDebug(message) {
+            console.log(message);
+            const timestamp = new Date().toLocaleTimeString();
+            const newMessage = `${timestamp}: ${message}`;
+            debug.textContent = newMessage + '\n' + debug.textContent;
+        }
+
+        function setupHandTracking() {
+            hands = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`;
+                }
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,  // Reduce to 1 hand for better performance
+                modelComplexity: 0,  // Use lighter model
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(onHandsResults);
+        }
+
+        function onHandsResults(results) {
+            // Update hand tracking status
+            const hasHands = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+            handTrackingStatus.classList.toggle('detected', hasHands);
+            handTrackingStatus.classList.toggle('not-detected', !hasHands);
+
+            // Draw hand landmarks
+            handCtx.save();
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+            
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(handCtx, landmarks, HAND_CONNECTIONS, {
+                        color: '#b388ff',
+                        lineWidth: 2
+                    });
+                    drawLandmarks(handCtx, landmarks, {
+                        color: '#e1bee7',
+                        lineWidth: 1,
+                        radius: 2
+                    });
+                }
+            }
+            
+            handCtx.restore();
+
+            // Send hand data to server if in desktop mode
+            if (!isLocalMode && hasHands) {
+                const now = performance.now();
+                if (now - lastHandsTime >= 1000 / TARGET_FPS) {
+                    socket.emit('hands', {
+                        landmarks: results.multiHandLandmarks,
+                        handedness: results.multiHandedness
+                    });
+                    lastHandsTime = now;
+                }
+            }
+        }
+
+        async function getCameraCapabilities(deviceId) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId } }
+            });
+            const track = stream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities();
+            stream.getTracks().forEach(track => track.stop());
+            return capabilities;
+        }
+
+        async function selectCamera(index) {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
+                const camera = availableCameras[index];
+                if (!camera) {
+                    throw new Error('Selected camera not found');
+                }
+
+                logDebug(`Selecting camera ${index}: ${camera.label || 'Unlabeled camera'}`);
+
+                // Update UI
+                document.querySelectorAll('.camera-option').forEach(opt => 
+                    opt.classList.remove('selected'));
+                document.querySelector(`.camera-option[data-index="${index}"]`)
+                    .classList.add('selected');
+
+                // Stop current stream
+                if (currentStream) {
+                    logDebug('Stopping current stream');
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = {
                     video: {
-                        facingMode: 'environment', // Use back camera
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        deviceId: { exact: camera.deviceId },
+                        width: { ideal: MAX_WIDTH },
+                        height: { ideal: MAX_HEIGHT },
+                        frameRate: { ideal: TARGET_FPS }
                     }
-                });
-                video.srcObject = stream;
+                };
+
+                logDebug('Requesting camera stream with constraints:', constraints);
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                stream = currentStream;
+
+                // Enable controls
+                startButton.style.display = 'block';
+                stopButton.style.display = 'block';
+                toggleFullscreen.style.display = 'block';
+                switchCamera.style.display = 'block';
                 startButton.disabled = true;
                 stopButton.disabled = false;
+                toggleFullscreen.disabled = false;
+                switchCamera.disabled = false;
+                videoContainer.classList.add('active');
+
+                // Setup hand tracking
+                logDebug('Setting up hand tracking');
+                setupHandTracking();
+                const mediaPipeCamera = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({image: video});
+                    },
+                    width: MAX_WIDTH,
+                    height: MAX_HEIGHT
+                });
+                mediaPipeCamera.start();
+
+                // Set canvas size
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        handCanvas.width = video.videoWidth;
+                        handCanvas.height = video.videoHeight;
+                        logDebug(`Video ready: ${video.videoWidth}x${video.videoHeight}`);
+                        resolve();
+                    };
+                });
+
+                cameraSelect.classList.remove('active');
+                updateStatus(`Using camera: ${camera.label || 'Camera ' + (index + 1)}`);
+                logDebug(`Selected camera: ${camera.label || 'Camera ' + (index + 1)}`);
+
+                isStreaming = true;
+                frameCount = 0;
+                lastFrameTime = performance.now();
                 
-                // Send video stream to server
-                sendVideoToServer();
+                if (!isLocalMode) {
+                    logDebug('Starting frame sending for desktop mode');
+                    requestAnimationFrame(sendFrame);
+                }
             } catch (err) {
-                console.error('Error accessing camera:', err);
-                alert('Error accessing camera. Please make sure you have granted camera permissions.');
+                console.error('Error selecting camera:', err);
+                updateStatus('Error selecting camera: ' + err.message, true);
+                logDebug('Camera selection error: ' + err.message);
             }
         }
 
-        // Function to stop the camera
+        async function showCameraSelect() {
+            try {
+                // Clear existing options
+                cameraOptions.innerHTML = '';
+                
+                // Add camera options
+                availableCameras.forEach((camera, index) => {
+                    const option = document.createElement('div');
+                    option.className = 'camera-option';
+                    option.textContent = camera.label || `Camera ${index + 1}`;
+                    option.dataset.index = index;
+                    option.addEventListener('click', () => selectCamera(index));
+                    cameraOptions.appendChild(option);
+                });
+
+                cameraSelect.classList.add('active');
+            } catch (err) {
+                console.error('Error showing camera select:', err);
+                updateStatus('Error showing camera options: ' + err.message, true);
+            }
+        }
+
+        async function startCamera() {
+            try {
+                updateStatus('Starting camera...');
+                logDebug('Requesting camera permissions');
+
+                // First get permission to access cameras
+                const initialStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                initialStream.getTracks().forEach(track => track.stop());
+
+                // Get all available cameras
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(device => device.kind === 'videoinput');
+                
+                logDebug(`Found ${cameras.length} cameras`);
+                cameras.forEach((cam, index) => {
+                    logDebug(`Camera ${index}: ${cam.label || 'Unlabeled camera'}`);
+                });
+
+                // Try to find the back camera
+                let backCamera = null;
+                for (const camera of cameras) {
+                    // iOS typically labels the back camera with "back" or "rear"
+                    if (camera.label && (
+                        camera.label.toLowerCase().includes('back') ||
+                        camera.label.toLowerCase().includes('rear') ||
+                        camera.label.toLowerCase().includes('environment')
+                    )) {
+                        backCamera = camera;
+                        break;
+                    }
+                }
+
+                // If no back camera found by label, try the second camera (usually back on iOS)
+                if (!backCamera && cameras.length > 1) {
+                    backCamera = cameras[1];
+                    logDebug('Using second camera as back camera');
+                }
+
+                // If still no back camera, use the first available camera
+                if (!backCamera && cameras.length > 0) {
+                    backCamera = cameras[0];
+                    logDebug('Using first available camera');
+                }
+
+                if (!backCamera) {
+                    throw new Error('No cameras found');
+                }
+
+                logDebug(`Selected camera: ${backCamera.label || 'Unlabeled camera'}`);
+
+                const constraints = {
+                    video: {
+                        deviceId: { exact: backCamera.deviceId },
+                        width: { ideal: MAX_WIDTH },
+                        height: { ideal: MAX_HEIGHT },
+                        frameRate: { ideal: TARGET_FPS }
+                    }
+                };
+
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                stream = currentStream;
+
+                // Enable controls
+                startButton.style.display = 'none';
+                stopButton.disabled = false;
+                toggleFullscreen.disabled = false;
+                videoContainer.classList.add('active');
+
+                // Setup hand tracking
+                logDebug('Setting up hand tracking');
+                setupHandTracking();
+                
+                // Optimize video processing
+                const mediaPipeCamera = new Camera(video, {
+                    onFrame: async () => {
+                        // Only process frames at target FPS
+                        const now = performance.now();
+                        if (now - lastFrameTime >= FRAME_INTERVAL) {
+                            await hands.send({image: video});
+                            lastFrameTime = now;
+                        }
+                    },
+                    width: MAX_WIDTH,
+                    height: MAX_HEIGHT
+                });
+                mediaPipeCamera.start();
+
+                // Set canvas size
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        handCanvas.width = video.videoWidth;
+                        handCanvas.height = video.videoHeight;
+                        logDebug(`Video ready: ${video.videoWidth}x${video.videoHeight}`);
+                        resolve();
+                    };
+                });
+
+                updateStatus(`Camera started`);
+                logDebug(`Camera started`);
+
+                isStreaming = true;
+                frameCount = 0;
+                lastFrameTime = performance.now();
+                
+                if (!isLocalMode) {
+                    logDebug('Starting frame sending for desktop mode');
+                    requestAnimationFrame(sendFrame);
+                }
+            } catch (err) {
+                console.error('Error starting camera:', err);
+                updateStatus('Error starting camera: ' + err.message, true);
+                logDebug('Camera error: ' + err.message);
+            }
+        }
+
         function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                video.srcObject = null;
-                startButton.disabled = false;
-                stopButton.disabled = true;
+            isStreaming = false;
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+                stream = null;
             }
+            video.srcObject = null;
+            startButton.style.display = 'block';
+            stopButton.disabled = true;
+            toggleFullscreen.disabled = true;
+            videoContainer.classList.remove('active');
+            container.classList.remove('fullscreen');
+            
+            // Clear hand tracking canvas
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+            handTrackingStatus.classList.remove('detected');
+            handTrackingStatus.classList.add('not-detected');
+            
+            updateStatus('Camera stopped');
+            logDebug('Camera stopped');
         }
 
-        // Function to send video frames to server
-        function sendVideoToServer() {
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            
-            function captureFrame() {
-                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        async function sendFrame(timestamp) {
+            if (!stream || !isStreaming || isLocalMode) return;
+
+            try {
+                const elapsed = timestamp - lastFrameTime;
+                if (elapsed < FRAME_INTERVAL) {
+                    requestAnimationFrame(sendFrame);
+                    return;
+                }
+
+                if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
-                    context.drawImage(video, 0, 0);
-                    
-                    // Send frame to server
-                    canvas.toBlob((blob) => {
-                        const formData = new FormData();
-                        formData.append('frame', blob);
-                        
-                        fetch('/upload_frame', {
-                            method: 'POST',
-                            body: formData
-                        }).catch(err => console.error('Error sending frame:', err));
-                    }, 'image/jpeg', 0.8);
                 }
+
+                ctx.drawImage(video, 0, 0);
+                const frameData = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
                 
-                if (stream) {
-                    requestAnimationFrame(captureFrame);
+                if (socket.connected) {
+                    socket.emit('frame', frameData);
+                    frameCount++;
+                    if (frameCount % TARGET_FPS === 0) {
+                        const fps = 1000 / elapsed;
+                        logDebug(`FPS: ${fps.toFixed(1)}, Frame size: ${(frameData.length / 1024).toFixed(1)}KB`);
+                    }
+                }
+
+                lastFrameTime = timestamp;
+                if (isStreaming) {
+                    requestAnimationFrame(sendFrame);
+                }
+            } catch (err) {
+                console.error('Error sending frame:', err);
+                logDebug('Frame error: ' + err.message);
+                if (isStreaming) {
+                    requestAnimationFrame(sendFrame);
                 }
             }
-            
-            captureFrame();
         }
 
-        // Event listeners
-        startButton.addEventListener('click', startCamera);
-        stopButton.addEventListener('click', stopCamera);
+        function toggleControlsMenu() {
+            isControlsOpen = !isControlsOpen;
+            controls.classList.toggle('open', isControlsOpen);
+            toggleControls.classList.toggle('open', isControlsOpen);
+        }
+
+        toggleControls.addEventListener('click', toggleControlsMenu);
+
+        function showControls() {
+            startButton.style.display = 'block';
+            stopButton.style.display = 'block';
+            toggleFullscreen.style.display = 'block';
+            switchCamera.style.display = 'block';
+            document.getElementById('modeSelect').classList.add('hidden');
+            // Open controls menu initially
+            toggleControlsMenu();
+        }
+
+        function toggleMode(local) {
+            isLocalMode = local;
+            debug.style.display = local ? 'none' : 'block';
+            updateStatus(local ? 'Local preview mode - Click Start Camera' : 'Desktop streaming mode - Click Start Camera');
+            
+            // Show camera selection when mode is selected
+            startCamera();
+        }
+
+        async function toggleFullscreenMode() {
+            try {
+                const videoContainer = document.querySelector('.video-container');
+                
+                if (!document.fullscreenElement) {
+                    // Try the standard fullscreen API first
+                    if (videoContainer.requestFullscreen) {
+                        await videoContainer.requestFullscreen();
+                    } 
+                    // Webkit (Safari)
+                    else if (videoContainer.webkitRequestFullscreen) {
+                        await videoContainer.webkitRequestFullscreen();
+                    }
+                    // Mozilla
+                    else if (videoContainer.mozRequestFullScreen) {
+                        await videoContainer.mozRequestFullScreen();
+                    }
+                    // MS
+                    else if (videoContainer.msRequestFullscreen) {
+                        await videoContainer.msRequestFullscreen();
+                    }
+                    
+                    videoContainer.classList.add('fullscreen');
+                    screen.orientation?.lock('landscape').catch(() => {
+                        // Ignore if orientation lock fails
+                        console.log('Orientation lock not supported');
+                    });
+                } else {
+                    // Exit fullscreen
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen();
+                    }
+                    // Webkit (Safari)
+                    else if (document.webkitExitFullscreen) {
+                        await document.webkitExitFullscreen();
+                    }
+                    // Mozilla
+                    else if (document.mozCancelFullScreen) {
+                        await document.mozCancelFullScreen();
+                    }
+                    // MS
+                    else if (document.msExitFullscreen) {
+                        await document.msExitFullscreen();
+                    }
+                    
+                    videoContainer.classList.remove('fullscreen');
+                    screen.orientation?.unlock();
+                }
+            } catch (err) {
+                console.error('Fullscreen error:', err);
+                // Fallback method if the Fullscreen API fails
+                const videoContainer = document.querySelector('.video-container');
+                videoContainer.classList.toggle('fullscreen');
+                updateStatus(videoContainer.classList.contains('fullscreen') ? 
+                    'Fullscreen mode enabled' : 'Fullscreen mode disabled');
+            }
+        }
+
+        // Add fullscreen change event listener
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+        function handleFullscreenChange() {
+            const videoContainer = document.querySelector('.video-container');
+            if (!document.fullscreenElement && 
+                !document.webkitFullscreenElement && 
+                !document.mozFullScreenElement && 
+                !document.msFullscreenElement) {
+                videoContainer.classList.remove('fullscreen');
+                screen.orientation?.unlock();
+                toggleControls.style.display = 'block';
+                if (isControlsOpen) {
+                    controls.classList.add('open');
+                }
+            } else {
+                // Hide controls in fullscreen
+                controls.classList.remove('open');
+                toggleControls.style.display = 'none';
+            }
+        }
+
+        // Add proper event listeners for mode selection
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM loaded, attaching event listeners');
+            
+            const localModeBtn = document.getElementById('localMode');
+            const desktopModeBtn = document.getElementById('desktopMode');
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const toggleFullscreen = document.getElementById('toggleFullscreen');
+            
+            console.log('Local mode button:', localModeBtn);
+            console.log('Desktop mode button:', desktopModeBtn);
+            
+            if (localModeBtn) {
+                localModeBtn.addEventListener('click', async () => {
+                    console.log('Local mode button clicked');
+                    logDebug('Local mode selected');
+                    isLocalMode = true;
+                    debug.style.display = 'none';
+                    document.getElementById('modeSelect').classList.add('hidden');
+                    await startCamera();
+                });
+            }
+            
+            if (desktopModeBtn) {
+                desktopModeBtn.addEventListener('click', async () => {
+                    console.log('Desktop mode button clicked');
+                    logDebug('Desktop mode selected');
+                    isLocalMode = false;
+                    debug.style.display = 'block';
+                    document.getElementById('modeSelect').classList.add('hidden');
+                    await startCamera();
+                });
+            }
+
+            if (startButton) {
+                startButton.addEventListener('click', async () => {
+                    console.log('Start button clicked');
+                    await startCamera();
+                });
+            }
+
+            if (stopButton) {
+                stopButton.addEventListener('click', stopCamera);
+            }
+
+            if (toggleFullscreen) {
+                toggleFullscreen.addEventListener('click', toggleFullscreenMode);
+            }
+        });
+
+        socket.on('connect', () => {
+            updateStatus('Connected to server');
+            logDebug('Socket connected');
+        });
+
+        socket.on('disconnect', () => {
+            updateStatus('Disconnected from server', true);
+            logDebug('Socket disconnected');
+        });
+
+        socket.on('error', (data) => {
+            updateStatus('Error: ' + data.message, true);
+            logDebug('Socket error: ' + data.message);
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (!isLocalMode) {
+                    isStreaming = false;
+                    logDebug('Page hidden, pausing stream');
+                }
+            } else if (stream && !isLocalMode) {
+                isStreaming = true;
+                logDebug('Page visible, resuming stream');
+                requestAnimationFrame(sendFrame);
+            }
+        });
     </script>
 </body>
-</html>
+</html> 
