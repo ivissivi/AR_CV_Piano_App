@@ -110,7 +110,6 @@ class PianoKeyRecognition:
         for key in piano_keys:
             red_line_start = None
             first_occurrence = True
-            
             for index, contour in enumerate(contours):
                 x, y, w, h = cv2.boundingRect(contour)
                 current_key = piano_keys[index % self.num_keys]
@@ -144,34 +143,38 @@ class PianoKeyRecognition:
             self.song_index = 0
 
     def generate_frames(self):
-        while True:
-            with self.frame_lock:
-                if self.current_frame is None:
-                    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                    cv2.putText(frame, 'Waiting for camera...', (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        with mido.open_input('Digital Keyboard 0') as inport:
+            while True:
+                success, frame = camera.read()
+                if not success:
+                    text_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.putText(text_frame, 'No input available', (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2,
+                                cv2.LINE_AA)
+                    ret, buffer = cv2.imencode('.jpg', text_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 else:
-                    frame = self.detect_and_outline_keys(self.current_frame)
+                    frame = self.detect_and_outline_keys(frame)
 
-                    if self.midi_port:
-                        for msg in self.midi_port.iter_pending():
-                            if msg.type == 'note_on':
-                                note = str(msg.note)
-                                key = midi_to_piano_keys.get(note, "Unknown Key")
-                                if msg.velocity == 0:
-                                    self.key_pressed[key] = False
-                                else:
-                                    self.key_pressed[key] = True
-                                    try:
-                                        note_sound = pygame.mixer.Sound(f"notes/{key}.wav")
-                                        note_sound.play()
-                                    except:
-                                        print(f"Note sound not found for key: {key}")
-                                    if key == song[self.song_index]:
-                                        self.move_to_next_key()
+                    for msg in inport.iter_pending():
+                        if msg.type == 'note_on':
+                            note = str(msg.note)
+                            velocity = str(msg.velocity)
+                            key = midi_to_piano_keys.get(note, "Unknown Key")
+                            if msg.velocity == 0:
+                                recognition.key_pressed[key] = False
+                                print(f"Released: {note}, Velocity: {velocity}, Key: {key}")
+                            else:
+                                recognition.key_pressed[key] = True
+                                print(f"Pressed: {note}, Velocity: {velocity}, Key: {key}")
+                                note_sound = pygame.mixer.Sound(f"notes/{key}.wav")
+                                note_sound.play()
+                                if key == song[self.song_index]:
+                                    self.move_to_next_key()
 
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                    frame = cv2.GaussianBlur(frame, (1, 1), 0)
+                    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
 # Initialize recognition system
 recognition = PianoKeyRecognition()

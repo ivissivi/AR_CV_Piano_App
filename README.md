@@ -1,4 +1,4 @@
-# AR Piano Learning App
+# AR_CV_Piano_App
 
 An augmented reality application that helps you learn to play the piano by providing visual feedback and real-time note recognition.
 
@@ -24,7 +24,7 @@ An augmented reality application that helps you learn to play the piano by provi
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/AR_CV_Piano_App.git
+git clone https://github.com/ivissivi/AR_CV_Piano_App.git
 cd AR_CV_Piano_App
 ```
 
