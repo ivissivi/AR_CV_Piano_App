@@ -1,6 +1,6 @@
 # AR CV Piano App
 
-An interactive piano application that uses computer vision and hand tracking to create an augmented reality piano experience. The app allows users to play a virtual piano using hand gestures captured through their device's camera.
+An interactive piano application that uses computer vision and hand tracking to create an immersive augmented reality piano experience. The app allows users to play a virtual piano using hand gestures captured through their device's camera, providing a unique and engaging way to interact with music.
 
 ## Features
 
