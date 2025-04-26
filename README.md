@@ -1,77 +1,116 @@
-# AR_CV_Piano_App
+# AR CV Piano App
 
-An augmented reality application that helps you learn to play the piano by providing visual feedback and real-time note recognition.
+An interactive piano application that uses computer vision and hand tracking to create an immersive augmented reality piano experience. The app allows users to play a virtual piano using hand gestures captured through their device's camera, providing a unique and engaging way to interact with music through modern technology.
 
 ## Features
 
-- Real-time piano key detection using computer vision
-- MIDI keyboard support for interactive learning
-- Visual guidance for playing songs
-- Note sound playback
-- Web interface for easy access
+- **Hand Tracking**: 
+  - Real-time hand tracking and gesture recognition using MediaPipe
+  - Optimized performance for smooth interaction
+  - Accurate finger position detection
+  - Dynamic gesture mapping to piano keys
+- **Dual Mode Support**:
+  - **Mobile Mode**: View and play directly on your mobile device
+  - **Desktop Mode**: Stream the piano interface to a desktop computer
+  - Seamless mode switching
+- **Camera Support**:
+  - Optimized for both front and back cameras
+  - Automatic back camera selection on iOS devices
+  - Smooth camera switching with UI controls
+  - Camera selection interface for multiple cameras
+- **User Interface**:
+  - Clean, modern design
+  - Auto-hiding status messages
+  - Subtle hand tracking status indicator
+  - Fullscreen mode support
+  - Responsive layout for all devices
+  - Camera controls with visual feedback
+- **Performance Optimizations**:
+  - Efficient hand tracking processing
+  - Frame rate optimization
+  - Responsive UI updates
+  - Optimized video streaming
+  - Reduced latency for real-time interaction
 
 ## Requirements
 
 - Python 3.7+
-- OpenCV (cv2)
 - Flask
-- Mido (for MIDI support)
-- Pygame (for sound playback)
-- A camera (webcam or IP camera)
-- MIDI keyboard (optional)
+- OpenCV
+- MediaPipe
+- Socket.IO
+- A modern web browser with WebRTC support
+- A device with a camera (mobile device recommended)
+- SSL certificates for secure connection
 
 ## Installation
 
-1. Clone this repository:
+1. Clone the repository:
 ```bash
 git clone https://github.com/ivissivi/AR_CV_Piano_App.git
 cd AR_CV_Piano_App
 ```
 
-2. Install the required packages:
+2. Install the required Python packages:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Make sure you have the following files in place:
-- `piano_key_mapping.json` (included)
-- `notes/` directory with WAV files for each note (C.wav, C#.wav, etc.)
+3. Generate SSL certificates (for secure WebRTC connections):
+```bash
+python generate_cert.py
+```
 
 ## Usage
 
-Run the application with default settings:
+1. Start the server:
 ```bash
 python ar_cv.py
 ```
 
-### Command Line Options
+2. Open the application in your browser:
+   - For mobile: Use the provided IP address and port
+   - For desktop: Use the same IP address and port
+   - Make sure to use HTTPS for secure connection
 
-- `--camera`: Camera source (default: 0)
-  - Webcam index (e.g., 0, 1)
-  - IP camera URL (e.g., http://192.168.1.100:8080/video)
-  - Video file path
-- `--port`: Web server port (default: 5000)
-- `--host`: Web server host (default: 0.0.0.0)
+3. Choose your viewing mode:
+   - **View on Phone**: Use your mobile device's camera directly
+   - **Stream to Desktop**: Stream the piano interface to a desktop computer
 
-Example with custom settings:
-```bash
-python ar_cv.py --camera 1 --port 8080
-```
+4. Camera Controls:
+   - The app will automatically select the back camera on iOS devices
+   - Use the camera controls to:
+     - Start/stop the camera
+     - Switch between front and back cameras
+     - Toggle fullscreen mode
+     - Select specific camera (if multiple available)
 
-### Using the Application
+5. Hand Tracking:
+   - Position your hands in view of the camera
+   - The app will track your hand movements and translate them into piano notes
+   - The hand tracking status indicator shows when hands are detected
+   - Adjust your hand position based on the visual feedback
 
-1. Open your web browser and navigate to `http://localhost:5000`
-2. Position your camera to view the piano keys
-3. The application will detect and outline the piano keys
-4. If you have a MIDI keyboard connected, you can play along with the visual guide
-5. The red line indicates the next note to play in the song
+## Technical Details
 
-## Troubleshooting
-
-- If the camera isn't detected, try a different camera source
-- If MIDI keyboard isn't working, check your connections and try reconnecting
-- Make sure all note sound files are present in the `notes/` directory
-- Ensure proper lighting for key detection
+- **Hand Tracking**: 
+  - Uses MediaPipe's hand tracking solution with optimized settings
+  - Custom gesture recognition algorithms
+  - Real-time finger position tracking
+- **Camera Selection**: 
+  - Implements intelligent camera selection based on device type
+  - Supports multiple camera configurations
+  - Automatic iOS back camera detection
+- **UI/UX**: 
+  - Responsive design with smooth transitions
+  - Intuitive camera controls
+  - Real-time visual feedback
+  - Auto-hiding interface elements
+- **Performance**: 
+  - Optimized frame processing
+  - Efficient hand tracking algorithms
+  - Reduced latency video streaming
+  - Smooth UI transitions
 
 ## Contributing
 

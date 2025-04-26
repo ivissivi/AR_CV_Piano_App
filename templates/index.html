@@ -307,6 +307,61 @@
         .camera-option.selected {
             background: rgba(179, 136, 255, 0.6);
         }
+        .settings-section {
+            width: 100%;
+            max-width: 300px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 10px;
+            display: none;
+        }
+        .settings-section.active {
+            display: block;
+        }
+        .settings-section h3 {
+            margin: 0 0 10px 0;
+            color: #b388ff;
+            font-size: 16px;
+        }
+        .settings-row {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        .settings-row label {
+            color: #e1bee7;
+            font-size: 14px;
+        }
+        .settings-row select {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #b388ff;
+            color: white;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 14px;
+            width: 100%;
+        }
+        .settings-row select:focus {
+            outline: none;
+            border-color: #e1bee7;
+        }
+        .settings-row select option {
+            background: #1a1a1a;
+            color: white;
+        }
+        .camera-preview {
+            width: 100%;
+            max-height: 200px;
+            margin-top: 10px;
+            border: 2px solid #b388ff;
+            border-radius: 10px;
+            display: none;
+        }
+        .camera-preview.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -331,8 +386,20 @@
         </div>
         <div class="toggle-controls" id="toggleControls"></div>
         <div class="controls" id="controls">
-            <button id="startButton" class="btn" style="display: none">Start Camera</button>
-            <button id="stopButton" class="btn" disabled>Stop Camera</button>
+            <button id="toggleSettings" class="btn">⚙️ Settings</button>
+            <div class="settings-section" id="settingsSection">
+                <h3>Camera Settings</h3>
+                <div class="settings-row">
+                    <label for="cameraDeviceSelect">Select Camera:</label>
+                    <select id="cameraDeviceSelect">
+                        <option value="">Loading cameras...</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <button id="startButton" class="btn" style="width: 100%;">Start Camera</button>
+                    <button id="stopButton" class="btn" style="width: 100%;" disabled>Stop Camera</button>
+                </div>
+            </div>
             <button id="toggleFullscreen" class="btn" disabled>Fullscreen</button>
         </div>
         <div id="status" class="status"></div>
@@ -377,13 +444,16 @@
         let hands = null;
         let lastHandsTime = 0;
 
-        const switchCamera = document.getElementById('switchCamera');
-        let currentCamera = 'back';
         let currentStream = null;
 
         const cameraSelect = document.getElementById('cameraSelect');
         const cameraOptions = document.getElementById('cameraOptions');
         let availableCameras = [];
+        let currentFacingMode = 'environment';
+
+        let cameraCheckInterval = null;
+        let cameraLockAttempts = 0;
+        const MAX_LOCK_ATTEMPTS = 3;
 
         function updateStatus(message, isError = false) {
             status.textContent = message;
@@ -399,10 +469,22 @@
         }
 
         function logDebug(message) {
-            console.log(message);
+            // Always log to console with timestamp
             const timestamp = new Date().toLocaleTimeString();
-            const newMessage = `${timestamp}: ${message}`;
-            debug.textContent = newMessage + '\n' + debug.textContent;
+            console.log(`[${timestamp}] ${message}`);
+            
+            // Send log to server
+            if (socket.connected) {
+                socket.emit('log', {
+                    timestamp: timestamp,
+                    message: message
+                });
+            }
+            
+            // Only update debug panel if in desktop mode
+            if (!isLocalMode) {
+                debug.textContent = `${timestamp}: ${message}\n` + debug.textContent;
+            }
         }
 
         function setupHandTracking() {
@@ -462,59 +544,161 @@
         }
 
         async function getCameraCapabilities(deviceId) {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: deviceId } }
-            });
-            const track = stream.getVideoTracks()[0];
-            const capabilities = track.getCapabilities();
-            stream.getTracks().forEach(track => track.stop());
-            return capabilities;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: deviceId } }
+                });
+                const track = stream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities();
+                const settings = track.getSettings();
+                stream.getTracks().forEach(track => track.stop());
+                return { capabilities, settings };
+            } catch (err) {
+                console.error('Error getting camera capabilities:', err);
+                return null;
+            }
         }
 
-        async function selectCamera(index) {
+        async function enumerateCameras() {
             try {
-                const camera = availableCameras[index];
-                if (!camera) {
-                    throw new Error('Selected camera not found');
+                // First get camera permission
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream.getTracks().forEach(track => track.stop());
+
+                // Get all available cameras
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(device => device.kind === 'videoinput');
+                
+                // Test each camera to get its capabilities
+                const cameraInfo = await Promise.all(
+                    cameras.map(async (camera) => {
+                        try {
+                            const stream = await navigator.mediaDevices.getUserMedia({
+                                video: { deviceId: { exact: camera.deviceId } }
+                            });
+                            const track = stream.getVideoTracks()[0];
+                            const settings = track.getSettings();
+                            const capabilities = track.getCapabilities();
+                            stream.getTracks().forEach(track => track.stop());
+                            
+                            return {
+                                deviceId: camera.deviceId,
+                                label: camera.label || `Camera ${cameras.indexOf(camera) + 1}`,
+                                settings,
+                                capabilities
+                            };
+                        } catch (err) {
+                            console.error(`Error testing camera ${camera.deviceId}:`, err);
+                            return null;
+                        }
+                    })
+                );
+
+                return cameraInfo.filter(info => info !== null);
+            } catch (err) {
+                console.error('Error enumerating cameras:', err);
+                return [];
+            }
+        }
+
+        async function updateCameraList() {
+            try {
+                const cameraSelect = document.getElementById('cameraDeviceSelect');
+                if (!cameraSelect) {
+                    console.error('Camera select element not found');
+                    return;
                 }
 
-                logDebug(`Selecting camera ${index}: ${camera.label || 'Unlabeled camera'}`);
+                cameraSelect.innerHTML = '<option value="">Loading cameras...</option>';
+                cameraSelect.disabled = true;
 
-                // Update UI
-                document.querySelectorAll('.camera-option').forEach(opt => 
-                    opt.classList.remove('selected'));
-                document.querySelector(`.camera-option[data-index="${index}"]`)
-                    .classList.add('selected');
-
-                // Stop current stream
-                if (currentStream) {
-                    logDebug('Stopping current stream');
-                    currentStream.getTracks().forEach(track => track.stop());
+                const cameras = await enumerateCameras();
+                
+                if (cameras.length === 0) {
+                    cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+                    updateStatus('No cameras found', true);
+                    return;
                 }
 
-                const constraints = {
-                    video: {
-                        deviceId: { exact: camera.deviceId },
-                        width: { ideal: MAX_WIDTH },
-                        height: { ideal: MAX_HEIGHT },
-                        frameRate: { ideal: TARGET_FPS }
+                // Show all cameras in the dropdown with their capabilities
+                cameraSelect.innerHTML = cameras.map((camera, index) => {
+                    const label = camera.label;
+                    const facingMode = camera.settings.facingMode || 'unknown';
+                    const resolution = `${camera.settings.width}x${camera.settings.height}`;
+                    const frameRate = camera.settings.frameRate;
+                    return `<option value="${camera.deviceId}">
+                        Camera ${index + 1}: ${label} (${facingMode}, ${resolution}, ${frameRate}fps)
+                    </option>`;
+                }).join('');
+
+                cameraSelect.disabled = false;
+                updateStatus(`Found ${cameras.length} cameras - Please test each camera to identify the back camera`);
+
+            } catch (err) {
+                console.error('Error updating camera list:', err);
+                updateStatus('Error updating camera list: ' + err.message, true);
+                const cameraSelect = document.getElementById('cameraDeviceSelect');
+                if (cameraSelect) {
+                    cameraSelect.innerHTML = '<option value="">Error loading cameras</option>';
+                }
+            }
+        }
+
+        async function startCamera() {
+            try {
+                updateStatus('Starting camera...');
+                logDebug('=== Starting Camera ===');
+
+                // Get the selected camera device ID
+                const cameraSelect = document.getElementById('cameraDeviceSelect');
+                if (!cameraSelect) {
+                    throw new Error('Camera selection not available');
+                }
+
+                const selectedDeviceId = cameraSelect.value;
+                
+                if (!selectedDeviceId) {
+                    await updateCameraList();
+                    if (!cameraSelect.value) {
+                        throw new Error('No camera available');
                     }
-                };
+                }
 
-                logDebug('Requesting camera stream with constraints:', constraints);
-                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                logDebug(`Selected camera device ID: ${selectedDeviceId}`);
+
+                // Try to start the selected camera
+                try {
+                    logDebug('Attempting to start selected camera...');
+                    currentStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            deviceId: { exact: selectedDeviceId },
+                            width: { ideal: MAX_WIDTH },
+                            height: { ideal: MAX_HEIGHT }
+                        }
+                    });
+                    logDebug('Successfully started selected camera');
+                } catch (err) {
+                    logDebug(`Failed to start selected camera: ${err.message}`);
+                    throw err;
+                }
+
                 video.srcObject = currentStream;
                 stream = currentStream;
 
+                // Log the actual camera settings being used
+                const track = currentStream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                logDebug(`Active camera settings: ${JSON.stringify(settings)}`);
+
                 // Enable controls
-                startButton.style.display = 'block';
-                stopButton.style.display = 'block';
-                toggleFullscreen.style.display = 'block';
-                switchCamera.style.display = 'block';
-                startButton.disabled = true;
-                stopButton.disabled = false;
-                toggleFullscreen.disabled = false;
-                switchCamera.disabled = false;
+                const startButton = document.getElementById('startButton');
+                const stopButton = document.getElementById('stopButton');
+                const toggleFullscreen = document.getElementById('toggleFullscreen');
+                
+                if (startButton) startButton.style.display = 'none';
+                if (stopButton) stopButton.disabled = false;
+                if (toggleFullscreen) toggleFullscreen.disabled = false;
+                
                 videoContainer.classList.add('active');
 
                 // Setup hand tracking
@@ -539,147 +723,8 @@
                     };
                 });
 
-                cameraSelect.classList.remove('active');
-                updateStatus(`Using camera: ${camera.label || 'Camera ' + (index + 1)}`);
-                logDebug(`Selected camera: ${camera.label || 'Camera ' + (index + 1)}`);
-
-                isStreaming = true;
-                frameCount = 0;
-                lastFrameTime = performance.now();
-                
-                if (!isLocalMode) {
-                    logDebug('Starting frame sending for desktop mode');
-                    requestAnimationFrame(sendFrame);
-                }
-            } catch (err) {
-                console.error('Error selecting camera:', err);
-                updateStatus('Error selecting camera: ' + err.message, true);
-                logDebug('Camera selection error: ' + err.message);
-            }
-        }
-
-        async function showCameraSelect() {
-            try {
-                // Clear existing options
-                cameraOptions.innerHTML = '';
-                
-                // Add camera options
-                availableCameras.forEach((camera, index) => {
-                    const option = document.createElement('div');
-                    option.className = 'camera-option';
-                    option.textContent = camera.label || `Camera ${index + 1}`;
-                    option.dataset.index = index;
-                    option.addEventListener('click', () => selectCamera(index));
-                    cameraOptions.appendChild(option);
-                });
-
-                cameraSelect.classList.add('active');
-            } catch (err) {
-                console.error('Error showing camera select:', err);
-                updateStatus('Error showing camera options: ' + err.message, true);
-            }
-        }
-
-        async function startCamera() {
-            try {
-                updateStatus('Starting camera...');
-                logDebug('Requesting camera permissions');
-
-                // First get permission to access cameras
-                const initialStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                initialStream.getTracks().forEach(track => track.stop());
-
-                // Get all available cameras
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const cameras = devices.filter(device => device.kind === 'videoinput');
-                
-                logDebug(`Found ${cameras.length} cameras`);
-                cameras.forEach((cam, index) => {
-                    logDebug(`Camera ${index}: ${cam.label || 'Unlabeled camera'}`);
-                });
-
-                // Try to find the back camera
-                let backCamera = null;
-                for (const camera of cameras) {
-                    // iOS typically labels the back camera with "back" or "rear"
-                    if (camera.label && (
-                        camera.label.toLowerCase().includes('back') ||
-                        camera.label.toLowerCase().includes('rear') ||
-                        camera.label.toLowerCase().includes('environment')
-                    )) {
-                        backCamera = camera;
-                        break;
-                    }
-                }
-
-                // If no back camera found by label, try the second camera (usually back on iOS)
-                if (!backCamera && cameras.length > 1) {
-                    backCamera = cameras[1];
-                    logDebug('Using second camera as back camera');
-                }
-
-                // If still no back camera, use the first available camera
-                if (!backCamera && cameras.length > 0) {
-                    backCamera = cameras[0];
-                    logDebug('Using first available camera');
-                }
-
-                if (!backCamera) {
-                    throw new Error('No cameras found');
-                }
-
-                logDebug(`Selected camera: ${backCamera.label || 'Unlabeled camera'}`);
-
-                const constraints = {
-                    video: {
-                        deviceId: { exact: backCamera.deviceId },
-                        width: { ideal: MAX_WIDTH },
-                        height: { ideal: MAX_HEIGHT },
-                        frameRate: { ideal: TARGET_FPS }
-                    }
-                };
-
-                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = currentStream;
-                stream = currentStream;
-
-                // Enable controls
-                startButton.style.display = 'none';
-                stopButton.disabled = false;
-                toggleFullscreen.disabled = false;
-                videoContainer.classList.add('active');
-
-                // Setup hand tracking
-                logDebug('Setting up hand tracking');
-                setupHandTracking();
-                
-                // Optimize video processing
-                const mediaPipeCamera = new Camera(video, {
-                    onFrame: async () => {
-                        // Only process frames at target FPS
-                        const now = performance.now();
-                        if (now - lastFrameTime >= FRAME_INTERVAL) {
-                            await hands.send({image: video});
-                            lastFrameTime = now;
-                        }
-                    },
-                    width: MAX_WIDTH,
-                    height: MAX_HEIGHT
-                });
-                mediaPipeCamera.start();
-
-                // Set canvas size
-                await new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        handCanvas.width = video.videoWidth;
-                        handCanvas.height = video.videoHeight;
-                        logDebug(`Video ready: ${video.videoWidth}x${video.videoHeight}`);
-                        resolve();
-                    };
-                });
-
-                updateStatus(`Camera started`);
-                logDebug(`Camera started`);
+                updateStatus('Camera started');
+                logDebug('Camera started successfully');
 
                 isStreaming = true;
                 frameCount = 0;
@@ -703,10 +748,21 @@
                 currentStream = null;
                 stream = null;
             }
+            if (cameraCheckInterval) {
+                clearInterval(cameraCheckInterval);
+                cameraCheckInterval = null;
+            }
+            cameraLockAttempts = 0;
             video.srcObject = null;
-            startButton.style.display = 'block';
-            stopButton.disabled = true;
-            toggleFullscreen.disabled = true;
+            
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const toggleFullscreen = document.getElementById('toggleFullscreen');
+            
+            if (startButton) startButton.style.display = 'block';
+            if (stopButton) stopButton.disabled = true;
+            if (toggleFullscreen) toggleFullscreen.disabled = true;
+            
             videoContainer.classList.remove('active');
             container.classList.remove('fullscreen');
             
@@ -766,6 +822,12 @@
             isControlsOpen = !isControlsOpen;
             controls.classList.toggle('open', isControlsOpen);
             toggleControls.classList.toggle('open', isControlsOpen);
+            
+            // Hide settings when closing controls
+            if (!isControlsOpen) {
+                const settingsSection = document.getElementById('settingsSection');
+                settingsSection.classList.remove('active');
+            }
         }
 
         toggleControls.addEventListener('click', toggleControlsMenu);
@@ -774,7 +836,6 @@
             startButton.style.display = 'block';
             stopButton.style.display = 'block';
             toggleFullscreen.style.display = 'block';
-            switchCamera.style.display = 'block';
             document.getElementById('modeSelect').classList.add('hidden');
             // Open controls menu initially
             toggleControlsMenu();
@@ -948,6 +1009,69 @@
                 isStreaming = true;
                 logDebug('Page visible, resuming stream');
                 requestAnimationFrame(sendFrame);
+            }
+        });
+
+        // Add event listener for camera selection change
+        document.getElementById('cameraDeviceSelect').addEventListener('change', async () => {
+            const selectedDeviceId = document.getElementById('cameraDeviceSelect').value;
+            if (!selectedDeviceId) return;
+
+            try {
+                // Stop any existing streams
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                    currentStream = null;
+                }
+
+                // Start new stream
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        deviceId: { exact: selectedDeviceId },
+                        width: { ideal: MAX_WIDTH },
+                        height: { ideal: MAX_HEIGHT }
+                    }
+                });
+
+                // Update main video element
+                video.srcObject = currentStream;
+                stream = currentStream;
+
+                // Update hand tracking canvas size
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        handCanvas.width = video.videoWidth;
+                        handCanvas.height = video.videoHeight;
+                        logDebug(`Video ready: ${video.videoWidth}x${video.videoHeight}`);
+                        resolve();
+                    };
+                });
+
+                // Log camera information
+                const track = currentStream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                logDebug(`Switched to camera: ${JSON.stringify(settings)}`);
+
+                updateStatus('Camera switched');
+            } catch (err) {
+                console.error('Error switching camera:', err);
+                updateStatus('Error switching camera: ' + err.message, true);
+            }
+        });
+
+        // Add settings toggle functionality
+        document.getElementById('toggleSettings').addEventListener('click', () => {
+            const settingsSection = document.getElementById('settingsSection');
+            settingsSection.classList.toggle('active');
+        });
+
+        // Update camera list when page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await updateCameraList();
+            } catch (err) {
+                console.error('Error initializing cameras:', err);
+                updateStatus('Error initializing cameras: ' + err.message, true);
             }
         });
     </script>
