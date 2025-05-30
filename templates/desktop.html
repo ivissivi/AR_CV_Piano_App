@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Piano - Desktop</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .title {
+            color: #b388ff;
+            margin-bottom: 30px;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            display: none;
+        }
+
+        .video-container.active {
+            display: block;
+        }
+
+        #video {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+            transition: opacity 0.3s;
+        }
+
+        .no-signal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .status.success {
+            color: #81c784;
+        }
+
+        .status.error {
+            color: #e57373;
+        }
+
+        .qr-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .qr-code {
+            max-width: 300px;
+            margin: 0 auto;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            color: #e1bee7;
+            max-width: 400px;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">AR Piano - Desktop</h1>
+        
+        <div class="qr-container">
+            <div class="qr-code" id="qrCode"></div>
+            <div class="instructions">
+                <p>1. Scan this QR code with your mobile device</p>
+                <p>2. Open the link in your mobile browser</p>
+                <p>3. Click "Start Camera" on your mobile device</p>
+            </div>
+        </div>
+
+        <div class="video-container">
+            <img id="video" src="" alt="Video Stream">
+            <div id="noSignal" class="no-signal">Waiting for video signal...</div>
+        </div>
+        <div id="status" class="status">Waiting for connection...</div>
+    </div>
+
+    <script>
+        const socket = io();
+        const video = document.getElementById('video');
+        const statusDiv = document.getElementById('status');
+        const noSignalDiv = document.getElementById('noSignal');
+        const videoContainer = document.querySelector('.video-container');
+        const qrContainer = document.querySelector('.qr-container');
+        let lastFrameTime = Date.now();
+        let noSignalTimeout;
+
+        function checkSignal() {
+            const now = Date.now();
+            if (now - lastFrameTime > 5000) {
+                noSignalDiv.style.display = 'block';
+                video.style.opacity = '0.5';
+            }
+        }
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            updateStatus('Connected to server', 'success');
+            noSignalDiv.style.display = 'block';
+            video.style.opacity = '0.5';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            updateStatus('Disconnected from server', 'error');
+            noSignalDiv.style.display = 'block';
+            video.style.opacity = '0.5';
+        });
+
+        socket.on('frame', (frameData) => {
+            try {
+                // Show video container and hide QR code when first frame is received
+                if (qrContainer.style.display !== 'none') {
+                    qrContainer.style.display = 'none';
+                    videoContainer.classList.add('active');
+                }
+
+                const img = new Image();
+                img.onload = () => {
+                    video.src = img.src;
+                    lastFrameTime = Date.now();
+                    noSignalDiv.style.display = 'none';
+                    video.style.opacity = '1';
+                };
+                img.onerror = (err) => {
+                    console.error('Error loading frame:', err);
+                    updateStatus('Error loading video frame', 'error');
+                };
+                img.src = 'data:image/jpeg;base64,' + frameData;
+            } catch (err) {
+                console.error('Error processing frame:', err);
+                updateStatus('Error processing video frame', 'error');
+            }
+        });
+
+        socket.on('error', (data) => {
+            console.error('Server error:', data.message);
+            updateStatus(data.message, 'error');
+            noSignalDiv.style.display = 'block';
+            video.style.opacity = '0.5';
+        });
+
+        function updateStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            console.log(`Status updated: ${message} (${type})`);
+        }
+
+        // Get QR code from server
+        socket.on('qr_code', (qrData) => {
+            try {
+                const qrCodeDiv = document.getElementById('qrCode');
+                qrCodeDiv.innerHTML = `<img src="data:image/png;base64,${qrData}" alt="QR Code">`;
+                console.log('QR code received and displayed');
+            } catch (err) {
+                console.error('Error displaying QR code:', err);
+                updateStatus('Error displaying QR code', 'error');
+            }
+        });
+
+        setInterval(checkSignal, 1000);
+    </script>
+</body>
+</html> 

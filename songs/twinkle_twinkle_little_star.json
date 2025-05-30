@@ -1,0 +1,219 @@
+{
+    "title": "Kur ta tu nu biji, aziti manu",
+    "tempo": 120,
+    "notes": [
+        {
+            "note": "C4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "D#4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "A4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "A4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "G4",
+            "duration": 1.0,
+            "finger": 5
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "D4",
+            "duration": 0.5,
+            "finger": 2
+        },
+        {
+            "note": "D4",
+            "duration": 0.5,
+            "finger": 2
+        },
+        {
+            "note": "C4",
+            "duration": 1.0,
+            "finger": 1
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "D4",
+            "duration": 1.0,
+            "finger": 2
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "D4",
+            "duration": 1.0,
+            "finger": 2
+        },
+        {
+            "note": "C4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "C4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "G4",
+            "duration": 0.5,
+            "finger": 5
+        },
+        {
+            "note": "A4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "A4",
+            "duration": 0.5,
+            "finger": 1
+        },
+        {
+            "note": "G4",
+            "duration": 1.0,
+            "finger": 5
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "F4",
+            "duration": 0.5,
+            "finger": 4
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "E4",
+            "duration": 0.5,
+            "finger": 3
+        },
+        {
+            "note": "D4",
+            "duration": 0.5,
+            "finger": 2
+        },
+        {
+            "note": "D4",
+            "duration": 0.5,
+            "finger": 2
+        },
+        {
+            "note": "C4",
+            "duration": 1.0,
+            "finger": 1
+        }
+    ],
+    "difficulty": "beginner",
+    "key": "C major",
+    "time_signature": "4/4"
+}

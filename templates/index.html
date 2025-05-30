@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
     <title>AR Piano App - Mobile</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"></script>
+    <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
     <style>
         body {
             margin: 0;
@@ -17,19 +22,52 @@
             font-family: Arial, sans-serif;
             height: 100vh;
             overflow: hidden;
+            position: fixed;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
+
+        @media screen and (orientation: portrait) {
+            .orientation-warning {
+                display: flex;
+            }
+        }
+
+        .orientation-warning {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            z-index: 9999;
+        }
+
+        .orientation-warning h2 {
+            color: #b388ff;
+            margin-bottom: 20px;
+        }
+
+        .orientation-warning p {
+            color: white;
+            margin-bottom: 30px;
+        }
+
         .container {
             height: 100%;
             display: flex;
             flex-direction: column;
         }
         .title {
-            font-size: 24px;
-            padding: 15px;
-            background: linear-gradient(45deg, #b388ff, #e1bee7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin: 0;
+            display: none; /* Hide the title */
         }
         .mode-select {
             position: fixed;
@@ -62,6 +100,26 @@
             color: white;
             text-align: center;
         }
+        .qr-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .qr-instructions {
+            color: white;
+            font-size: 16px;
+            max-width: 300px;
+            text-align: center;
+            line-height: 1.5;
+        }
         .mode-buttons {
             display: flex;
             flex-direction: column;
@@ -86,30 +144,81 @@
             transform: translateY(0);
         }
         .video-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            position: relative;
+            width: 100%;
+            height: 100%;
             background-color: #000;
-            display: none;
-            z-index: 1;
+            overflow: hidden;
         }
-        .video-container.active {
-            display: block;
-        }
-        .video-container.fullscreen {
-            position: fixed;
-            z-index: 2000;
-        }
+        
         #videoElement {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
+        
+        #handCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+        
+        .piano-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .key-marker {
+            position: absolute;
+            width: 4px;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.8);
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+            mix-blend-mode: screen;
+        }
+        
+        .key-label {
+            position: absolute;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 4px 8px;
+            border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            mix-blend-mode: normal;
+        }
+        
+        .key-highlight {
+            position: absolute;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            mix-blend-mode: screen;
+            transition: all 0.1s ease;
+        }
+        
+        .key-press-marker {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            mix-blend-mode: screen;
+            transition: all 0.1s ease;
+        }
         .controls {
             position: fixed;
-            bottom: -150px; /* Start hidden */
+            bottom: -220px; /* Increased negative value to fully hide the panel */
             left: 0;
             right: 0;
             background: rgba(0, 0, 0, 0.8);
@@ -121,7 +230,7 @@
             gap: 10px;
             align-items: center;
             transition: bottom 0.3s ease;
-            z-index: 1000;
+            z-index: 10;
         }
         .controls.open {
             bottom: 0;
@@ -141,7 +250,7 @@
             justify-content: center;
             align-items: center;
             cursor: pointer;
-            z-index: 1001;
+            z-index: 11;
             transition: transform 0.3s ease;
         }
         .toggle-controls.open {
@@ -160,7 +269,7 @@
             border-radius: 25px;
             font-size: 16px;
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: transform 0.2s, opacity 0.2s;
             width: 200px;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
@@ -171,6 +280,7 @@
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            background: linear-gradient(45deg, #666666, #999999);
         }
         .btn.selected {
             background: linear-gradient(45deg, #e1bee7, #b388ff);
@@ -186,7 +296,7 @@
             background-color: rgba(0,0,0,0.7);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            z-index: 100;
+            z-index: 10;
             transition: opacity 0.3s;
             opacity: 1;
         }
@@ -234,6 +344,7 @@
             opacity: 1;
         }
         .hand-tracking {
+            display: none; /* Hide the hand tracking indicator */
             position: fixed;
             top: 20px;
             right: 20px;
@@ -243,7 +354,7 @@
             font-size: 14px;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            z-index: 100;
+            z-index: 10;
             opacity: 0.7;
             transition: opacity 0.3s;
         }
@@ -262,15 +373,6 @@
         }
         .hand-tracking .status.not-detected {
             background-color: #e1bee7;
-        }
-        #handCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-            pointer-events: none;
         }
         .camera-select {
             position: fixed;
@@ -362,23 +464,284 @@
         .camera-preview.active {
             display: block;
         }
+        @media screen and (orientation: landscape) {
+            .video-container {
+                width: 100vw;
+                height: 100vh;
+            }
+            
+            #videoElement {
+                width: 100vw;
+                height: 100vh;
+            }
+            
+            #handCanvas {
+                width: 100vw;
+                height: 100vh;
+            }
+        }
+        .camera-switch, .calibrate-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: transform 0.2s;
+        }
+
+        .calibrate-button {
+            top: 80px;  /* Position below camera switch */
+        }
+
+        .camera-switch:hover, .calibrate-button:hover {
+            transform: scale(1.05);
+        }
+
+        .camera-switch:active, .calibrate-button:active {
+            transform: scale(0.95);
+        }
+
+        .camera-switch svg, .calibrate-button svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+        }
+
+        /* Add song selection styles */
+        .song-select-button {
+            position: fixed;
+            top: 140px;  /* Position below calibration button */
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 10;
+            display: none; /* Hide by default */
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: transform 0.2s;
+        }
+
+        .song-select-button:hover {
+            transform: scale(1.05);
+        }
+
+        .song-select-button:active {
+            transform: scale(0.95);
+        }
+
+        .song-select-button svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+        }
+
+        .song-select-dropdown {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            z-index: 1000;
+            display: none;
+            width: 400px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .song-select-dropdown.active {
+            display: block;
+        }
+
+        .song-select-dropdown h3 {
+            color: #b388ff;
+            margin: 0 0 20px 0;
+            text-align: center;
+            font-size: 20px;
+        }
+
+        .sort-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            justify-content: center;
+        }
+
+        .sort-button {
+            padding: 8px 12px;
+            background: rgba(179, 136, 255, 0.2);
+            border: 1px solid rgba(179, 136, 255, 0.4);
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .sort-button:hover {
+            background: rgba(179, 136, 255, 0.3);
+        }
+
+        .sort-button.active {
+            background: rgba(179, 136, 255, 0.5);
+            border-color: rgba(179, 136, 255, 0.8);
+        }
+
+        .song-option {
+            padding: 15px;
+            color: white;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+            margin: 8px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: left;
+            font-size: 16px;
+        }
+
+        .song-option:hover {
+            background: rgba(179, 136, 255, 0.3);
+            transform: scale(1.02);
+        }
+
+        .song-option.selected {
+            background: rgba(179, 136, 255, 0.5);
+            border-color: rgba(179, 136, 255, 0.8);
+        }
+
+        .song-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .song-details {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        /* Remove the old ::before content */
+        .song-select-dropdown::before {
+            content: none;
+        }
+
+        /* Add piano learning mode styles */
+        .piano-learning-mode {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 10px;
+            z-index: 100;
+            display: none;
+        }
+
+        .piano-learning-mode.active {
+            display: block;
+        }
+
+        .current-note {
+            font-size: 24px;
+            font-weight: bold;
+            color: #b388ff;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .note-progress {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .note-progress-bar {
+            height: 100%;
+            background: #b388ff;
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .note-feedback {
+            text-align: center;
+            font-size: 18px;
+            margin-top: 10px;
+            font-weight: bold;
+            transition: color 0.3s ease;
+        }
+
+        .note-feedback.correct {
+            color: #4CAF50;
+        }
+
+        .note-feedback.incorrect {
+            color: #f44336;
+        }
+
+        .key-highlight {
+            pointer-events: none;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        
+        .key-label {
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Add this CSS animation at the top of the file in the <style> section */
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 15px rgba(78, 205, 196, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 25px rgba(78, 205, 196, 0.8);
+            }
+            100% {
+                box-shadow: 0 0 15px rgba(78, 205, 196, 0.5);
+            }
+        }
     </style>
 </head>
 <body>
+    <div class="orientation-warning">
+        <h2>Please Rotate Your Device</h2>
+        <p>This app requires landscape orientation for the best experience.</p>
+    </div>
     <div class="container">
-        <h1 class="title">AR Piano App</h1>
         <div id="modeSelect" class="mode-select">
             <div class="mode-select-content">
-                <h2>Choose Viewing Mode</h2>
-                <div class="mode-buttons">
-                    <button id="localMode" class="btn">📱 View on Phone</button>
-                    <button id="desktopMode" class="btn">🖥️ Stream to Desktop</button>
+                <h2>Scan QR code</h2>
+                <div class="qr-container">
+                    <div id="qrCode" class="qr-code"></div>
+                    <p class="qr-instructions">Scan this QR code with your mobile device to connect</p>
                 </div>
             </div>
         </div>
         <div class="video-container">
             <video id="videoElement" autoplay playsinline></video>
             <canvas id="handCanvas"></canvas>
+            <div id="pianoOverlay" class="piano-overlay"></div>
         </div>
         <div class="hand-tracking">
             <span class="status not-detected"></span>
@@ -396,14 +759,48 @@
                     </select>
                 </div>
                 <div class="settings-row">
+                    <label for="handTrackingMode">Hand Tracking Mode:</label>
+                    <select id="handTrackingMode">
+                        <option value="single">Single Hand</option>
+                        <option value="dual">Dual Hands</option>
+                    </select>
+                </div>
+                <div class="settings-row">
                     <button id="startButton" class="btn" style="width: 100%;">Start Camera</button>
                     <button id="stopButton" class="btn" style="width: 100%;" disabled>Stop Camera</button>
                 </div>
+                <div class="settings-row">
+                    <label for="midiDeviceSelect">Select MIDI Device:</label>
+                    <select id="midiDeviceSelect">
+                        <option value="">No MIDI devices found</option>
+                    </select>
+                </div>
             </div>
             <button id="toggleFullscreen" class="btn" disabled>Fullscreen</button>
+            <button id="pianoLearningButton" class="btn" disabled>🎹 Start Learning</button>
         </div>
         <div id="status" class="status"></div>
+        <div id="playNoteMessage" style="display:none; position:fixed; top:20px; right:20px; z-index:20; background:rgba(40,40,40,0.9); color:#b388ff; font-size:16px; font-weight:bold; padding:12px 24px; border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,0.3); pointer-events:none; text-align:right;"></div>
         <div id="debug" class="debug"></div>
+        <div class="camera-switch" id="cameraSwitch" title="Switch Camera">
+            <img src="/icons/switch_camera.png" alt="Switch Camera" style="width: 24px; height: 24px;">
+        </div>
+        <div class="calibrate-button" id="calibrateButton" title="Calibrate Piano">
+            <img src="/icons/calibration.png" alt="Calibrate Piano" style="width: 24px; height: 24px;">
+        </div>
+        <div class="song-select-button" id="songSelectButton" title="Select song" onclick="handleSongSelectClick(event)">
+            <img src="/icons/music_note.png" alt="Select Song" style="width: 24px; height: 24px;">
+        </div>
+        <div class="song-select-dropdown" id="songSelectDropdown">
+            <!-- Songs will be loaded dynamically -->
+        </div>
+        <div class="piano-learning-mode" id="pianoLearningMode">
+            <div class="current-note" id="currentNote">--</div>
+            <div class="note-progress">
+                <div class="note-progress-bar" id="noteProgressBar"></div>
+    </div>
+            <div class="note-feedback" id="noteFeedback"></div>
+        </div>
     </div>
 
     <script>
@@ -412,6 +809,141 @@
             reconnectionAttempts: 5,
             reconnectionDelay: 1000
         });
+
+        // Function to detect key boundaries by analyzing pixel colors
+        function detectKeyBoundaries(x, y) {
+            const ctx = handCanvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, handCanvas.width, handCanvas.height);
+            const data = imageData.data;
+            
+            // Function to check if a pixel is white (allowing for more variation)
+            function isWhiteKey(r, g, b) {
+                const brightness = (r + g + b) / 3;
+                // More tolerant white detection
+                return brightness > 180 && 
+                       Math.abs(r - g) < 50 && 
+                       Math.abs(g - b) < 50 && 
+                       Math.abs(r - b) < 50;
+            }
+            
+            // Function to check multiple pixels in a vertical line
+            function checkVerticalLine(x, y) {
+                const samples = 5; // Check multiple points
+                let whiteCount = 0;
+                for (let i = 0; i < samples; i++) {
+                    const sampleY = y + (i - Math.floor(samples/2)) * 10;
+                    if (sampleY < 0 || sampleY >= handCanvas.height) continue;
+                    
+                    const index = (Math.floor(sampleY) * handCanvas.width + Math.floor(x)) * 4;
+                    const r = data[index];
+                    const g = data[index + 1];
+                    const b = data[index + 2];
+                    if (isWhiteKey(r, g, b)) whiteCount++;
+                }
+                return whiteCount >= Math.floor(samples * 0.6); // 60% must be white
+            }
+            
+            // Start scanning from a point higher up
+            y = Math.max(y - 50, 0);
+            
+            // Find left boundary with vertical line checking
+            let leftBound = x;
+            let leftStreak = 0;
+            while (leftBound > 0) {
+                if (!checkVerticalLine(leftBound, y)) {
+                    leftStreak++;
+                    if (leftStreak > 3) { // Require multiple black pixels to confirm boundary
+                        leftBound += 3;
+                        break;
+                    }
+                } else {
+                    leftStreak = 0;
+                }
+                leftBound--;
+            }
+            
+            // Find right boundary with vertical line checking
+            let rightBound = x;
+            let rightStreak = 0;
+            while (rightBound < handCanvas.width) {
+                if (!checkVerticalLine(rightBound, y)) {
+                    rightStreak++;
+                    if (rightStreak > 3) {
+                        rightBound -= 3;
+                        break;
+                    }
+                } else {
+                    rightStreak = 0;
+                }
+                rightBound++;
+            }
+            
+            // Find top boundary
+            let topBound = y;
+            let topStreak = 0;
+            while (topBound > 0) {
+                const index = (Math.floor(topBound) * handCanvas.width + Math.floor(x)) * 4;
+                const r = data[index];
+                const g = data[index + 1];
+                const b = data[index + 2];
+                if (!isWhiteKey(r, g, b)) {
+                    topStreak++;
+                    if (topStreak > 3) {
+                        topBound += 3;
+                        break;
+                    }
+                } else {
+                    topStreak = 0;
+                }
+                topBound--;
+            }
+            
+            // Find bottom boundary
+            let bottomBound = y;
+            let bottomStreak = 0;
+            while (bottomBound < handCanvas.height) {
+                const index = (Math.floor(bottomBound) * handCanvas.width + Math.floor(x)) * 4;
+                const r = data[index];
+                const g = data[index + 1];
+                const b = data[index + 2];
+                if (!isWhiteKey(r, g, b)) {
+                    bottomStreak++;
+                    if (bottomStreak > 3) {
+                        bottomBound -= 3;
+                        break;
+                    }
+                } else {
+                    bottomStreak = 0;
+                }
+                bottomBound++;
+            }
+            
+            // Ensure minimum key width and height
+            const minWidth = 20;
+            const minHeight = 100;
+            const width = rightBound - leftBound;
+            const height = bottomBound - topBound;
+            
+            if (width < minWidth) {
+                const center = (leftBound + rightBound) / 2;
+                leftBound = center - minWidth/2;
+                rightBound = center + minWidth/2;
+            }
+            
+            if (height < minHeight) {
+                const center = (topBound + bottomBound) / 2;
+                topBound = center - minHeight/2;
+                bottomBound = center + minHeight/2;
+            }
+            
+            return {
+                left: leftBound,
+                right: rightBound,
+                top: topBound,
+                bottom: bottomBound
+            };
+        }
+
         const video = document.getElementById('videoElement');
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
@@ -428,7 +960,7 @@
         let frameCount = 0;
         let lastFrameTime = 0;
         let isLocalMode = true;
-        const TARGET_FPS = 15;
+        const TARGET_FPS = 60;
         const FRAME_INTERVAL = 1000 / TARGET_FPS;
         const MAX_WIDTH = 640;
         const MAX_HEIGHT = 480;
@@ -446,14 +978,195 @@
 
         let currentStream = null;
 
-        const cameraSelect = document.getElementById('cameraSelect');
-        const cameraOptions = document.getElementById('cameraOptions');
+        // Initialize availableCameras at the top level
         let availableCameras = [];
-        let currentFacingMode = 'environment';
+        let currentCameraIndex = 0;
 
-        let cameraCheckInterval = null;
-        let cameraLockAttempts = 0;
-        const MAX_LOCK_ATTEMPTS = 3;
+        // Add piano detection state
+        let isPianoDetectionActive = true;
+        let isCalibrating = false;
+        let calibrationPoints = [];
+        let keySpacing = 0;
+        let firstKeyPosition = 0;
+        let stabilityCounter = 0;
+        let lastPoint = null;
+        let lastPointTime = 0;
+        let isFingerLocked = false;
+        let waitingForRightHand = true;
+        const STABILITY_THRESHOLD = 6; // Reduced for faster detection
+        const STABILITY_DISTANCE = 12; // Slightly increased for better tolerance
+        const STABILITY_TIME = 600; // Reduced for faster response
+        const MIN_DISTANCE_BETWEEN_POINTS = 40;
+        const FINGER_LOCK_THRESHOLD = 4; // Reduced for faster locking
+        let lastVisualUpdate = 0;
+        const VISUAL_UPDATE_INTERVAL = 100; // Update visuals every 100ms
+
+        // Add calibration UI with better feedback
+        const calibrationUI = document.createElement('div');
+        calibrationUI.style.position = 'absolute';
+        calibrationUI.style.top = '20px';
+        calibrationUI.style.left = '50%';
+        calibrationUI.style.transform = 'translateX(-50%)';
+        calibrationUI.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        calibrationUI.style.padding = '10px';
+        calibrationUI.style.borderRadius = '10px';
+        calibrationUI.style.zIndex = '100';
+        calibrationUI.style.display = 'none';
+        calibrationUI.innerHTML = `
+            <div style="color: white; text-align: center;">
+                <h3 style="margin: 0 0 10px 0;">Piano Calibration</h3>
+                <p style="margin: 0;" id="handOrderMessage">Place your RIGHT hand thumb on the first C key</p>
+                <p style="margin: 5px 0;">Progress: <span id="calibrationProgress">0/2</span></p>
+                <p style="margin: 5px 0;">Status: <span id="calibrationStatus">Waiting for right hand...</span></p>
+                <p style="margin: 5px 0;">Stability: <span id="stabilityIndicator">Hold your thumb still...</span></p>
+                <p style="margin: 5px 0;">Lock Status: <span id="lockStatus">Not locked</span></p>
+                <div id="calibrationVisual" style="margin-top: 10px; height: 20px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden;">
+                    <div id="stabilityBar" style="height: 100%; width: 0%; background: #b388ff; transition: width 0.2s;"></div>
+                </div>
+            </div>
+        `;
+        document.querySelector('.video-container').appendChild(calibrationUI);
+
+        document.getElementById('handTrackingMode').value = 'dual';
+
+        let pianoKeys = [];
+        const KEY_PRESS_THRESHOLD = 0.1; // Distance threshold for key press detection
+        const KEY_RELEASE_THRESHOLD = 0.15; // Distance threshold for key release
+
+        let lastHandPositions = [];
+        const SMOOTHING_WINDOW = 10; // Increased from 5 for more smoothing
+        const SMOOTHING_WEIGHT = 0.7; // Weight for new positions vs smoothed positions
+
+        const HAND_TRACKING_FPS = 60;
+        const HAND_TRACKING_INTERVAL = 1000 / HAND_TRACKING_FPS;
+        let lastHandTrackingTime = 0;
+        let frameSkipCounter = 0;
+        const FRAME_SKIP_THRESHOLD = 3; // Skip every 3rd frame if lagging
+
+        // Buffer for recent hand tracking results
+        let handTrackingBuffer = [];
+        const HAND_TRACKING_BUFFER_SIZE = 5;
+
+        function drawGuidelines(ctx, width, height) {
+            // Clear the canvas first
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw the video frame
+            ctx.drawImage(video, 0, 0, width, height);
+            
+            // Only draw guidelines if we have calibrated piano keys
+            if (pianoKeys && pianoKeys.length > 0) {
+                // Draw white keys
+                pianoKeys.forEach((key, index) => {
+                    const keyWidth = keySpacing * 0.8; // Make key slightly smaller than spacing
+                    const keyHeight = height * 0.6;
+                    const x = key.x - (keyWidth / 2);
+                    const y = key.y - (keyHeight / 2);
+                    
+                // Draw white key background with improved visibility
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.fillRect(x, y, keyWidth, keyHeight);
+                    
+                // Draw white key border with improved visibility
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+                ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, keyWidth, keyHeight);
+            
+                    // Draw black keys (if not C, F, or G)
+                    const noteName = key.name;
+                    if (!noteName.includes('C') && !noteName.includes('F') && !noteName.includes('G')) {
+                        const blackKeyWidth = keyWidth * 0.7;
+                        
+                        // Adjust black key position based on the note
+                        let blackX = key.x - (blackKeyWidth / 2);
+                        if (noteName.includes('C#')) {
+                            // Move C# closer to C
+                            blackX = key.x - (blackKeyWidth * 0.9);
+                        } else if (noteName.includes('D#')) {
+                            // Move D# closer to E
+                            blackX = key.x + (blackKeyWidth * 0.3);
+                        } else if (noteName.includes('F#')) {
+                            // Move F# closer to F
+                            blackX = key.x - (blackKeyWidth * 0.9);
+                        } else if (noteName.includes('A#')) {
+                            // Move A# closer to B
+                            blackX = key.x + (blackKeyWidth * 0.3);
+                        }
+                        // G# stays in the middle
+                        
+                        const blackY = y;
+                        const blackKeyHeight = keyHeight * 0.6;
+                        
+                        // Draw black key background with improved visibility
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                        ctx.fillRect(blackX, blackY, blackKeyWidth, blackKeyHeight);
+                        
+                        // Draw black key border with improved visibility
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(blackX, blackY, blackKeyWidth, blackKeyHeight);
+                    }
+                });
+            }
+            
+            // Draw center crosshair with improved visibility
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const crosshairSize = 40; // Increased size
+            
+            ctx.strokeStyle = '#FFFF00';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(centerX - crosshairSize, centerY);
+            ctx.lineTo(centerX + crosshairSize, centerY);
+            ctx.moveTo(centerX, centerY - crosshairSize);
+            ctx.lineTo(centerX, centerY + crosshairSize);
+            ctx.stroke();
+            
+            // Draw instructions background with improved visibility
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, width, 150);
+            
+            const instructions = [
+                "ALIGNMENT GUIDE:",
+                "1. Position keyboard within the piano keys outline",
+                "2. Keep keyboard parallel to the keys",
+                "3. Ensure good lighting and focus",
+                "4. Position camera directly above keyboard"
+            ];
+            
+            ctx.font = 'bold 24px Arial'; // Increased font size
+            ctx.fillStyle = '#FFFF00';
+            ctx.fillText(instructions[0], 20, 40);
+            
+            ctx.font = '20px Arial'; // Increased font size
+            ctx.fillStyle = '#FFFFFF';
+            for (let i = 1; i < instructions.length; i++) {
+                ctx.fillText(instructions[i], 20, 40 + i * 30); // Increased line spacing
+            }
+        }
+
+        // Modify the video element's onloadedmetadata handler
+        video.onloadedmetadata = () => {
+            localCanvas.width = video.videoWidth;
+            localCanvas.height = video.videoHeight;
+            handCanvas.width = video.videoWidth;
+            handCanvas.height = video.videoHeight;
+            
+            // Start processing frames in local mode
+            if (isLocalMode) {
+                function processLocalFrame() {
+                    if (!isLocalMode || !video.videoWidth) return;
+                    
+                    // Draw guidelines on the local canvas
+                    drawGuidelines(localCtx, video.videoWidth, video.videoHeight);
+                    
+                    requestAnimationFrame(processLocalFrame);
+                }
+                
+                processLocalFrame();
+            }
+        };
 
         function updateStatus(message, isError = false) {
             status.textContent = message;
@@ -488,6 +1201,9 @@
         }
 
         function setupHandTracking() {
+            const handTrackingMode = document.getElementById('handTrackingMode').value;
+            const maxNumHands = handTrackingMode === 'dual' ? 2 : 1;
+
             hands = new Hands({
                 locateFile: (file) => {
                     return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`;
@@ -495,13 +1211,48 @@
             });
 
             hands.setOptions({
-                maxNumHands: 1,  // Reduce to 1 hand for better performance
-                modelComplexity: 0,  // Use lighter model
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
+                maxNumHands: maxNumHands,
+                modelComplexity: 0, // Reduced from 1 for faster processing
+                minDetectionConfidence: 0.5, // Reduced from 0.7 for faster detection
+                minTrackingConfidence: 0.5, // Reduced from 0.7 for faster tracking
+                staticImageMode: false
             });
 
             hands.onResults(onHandsResults);
+        }
+
+        // Add position stabilization
+        const POSITION_HISTORY_SIZE = 3;
+        const POSITION_THRESHOLD = 0.15; // Increased from 0.1 for more movement tolerance
+        let positionHistory = [];
+
+        function stabilizePosition(newPosition) {
+            if (!newPosition) return null;
+            
+            // Add new position to history
+            positionHistory.push(newPosition);
+            if (positionHistory.length > POSITION_HISTORY_SIZE) {
+                positionHistory.shift();
+            }
+            
+            // If we don't have enough history, return the new position
+            if (positionHistory.length < 2) return newPosition;
+            
+            // Calculate average position
+            const avgX = positionHistory.reduce((sum, pos) => sum + pos.x, 0) / positionHistory.length;
+            const avgY = positionHistory.reduce((sum, pos) => sum + pos.y, 0) / positionHistory.length;
+            
+            // Check if the new position is within threshold of the average
+            const dx = newPosition.x - avgX;
+            const dy = newPosition.y - avgY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > POSITION_THRESHOLD) {
+                // If movement is too large, use the average position
+                return { x: avgX, y: avgY };
+            }
+            
+            return newPosition;
         }
 
         function onHandsResults(results) {
@@ -510,30 +1261,98 @@
             handTrackingStatus.classList.toggle('detected', hasHands);
             handTrackingStatus.classList.toggle('not-detected', !hasHands);
 
-            // Draw hand landmarks
-            handCtx.save();
+            // Clear the canvas
             handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
             
-            if (results.multiHandLandmarks) {
-                for (const landmarks of results.multiHandLandmarks) {
-                    drawConnectors(handCtx, landmarks, HAND_CONNECTIONS, {
-                        color: '#b388ff',
-                        lineWidth: 2
-                    });
-                    drawLandmarks(handCtx, landmarks, {
-                        color: '#e1bee7',
-                        lineWidth: 1,
-                        radius: 2
-                    });
-                }
+            if (!hasHands) {
+                return;
             }
             
-            handCtx.restore();
+            if (results.multiHandLandmarks) {
+                results.multiHandLandmarks.forEach((landmarks, handIndex) => {
+                    const handedness = results.multiHandedness[handIndex];
+                    const isLeftHand = handedness.label === 'Right';
+                    const color = isLeftHand ? '#FF6B6B' : '#4ECDC4';
+                    
+                    // Stabilize index finger tip position
+                    const indexTip = landmarks[8];
+                    const stabilizedPosition = stabilizePosition({
+                        x: indexTip.x * handCanvas.width,
+                        y: indexTip.y * handCanvas.height
+                    });
+                    
+                    // Draw connections between landmarks with improved visibility
+                    handCtx.strokeStyle = color;
+                    handCtx.lineWidth = 3; // Increased from 2 for better visibility
+                    
+                    // Draw palm connections
+                    const palmIndices = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 9], [9, 13], [13, 17], [0, 17]];
+                    palmIndices.forEach(([i, j]) => {
+                        handCtx.beginPath();
+                        handCtx.moveTo(landmarks[i].x * handCanvas.width, landmarks[i].y * handCanvas.height);
+                        handCtx.lineTo(landmarks[j].x * handCanvas.width, landmarks[j].y * handCanvas.height);
+                        handCtx.stroke();
+                    });
+                    
+                    // Draw finger connections and points with improved visibility
+                    for (let finger = 0; finger < 5; finger++) {
+                        const offset = finger * 4 + 1;
+                        for (let joint = 0; joint < 3; joint++) {
+                            handCtx.beginPath();
+                            handCtx.moveTo(
+                                landmarks[offset + joint].x * handCanvas.width,
+                                landmarks[offset + joint].y * handCanvas.height
+                            );
+                            handCtx.lineTo(
+                                landmarks[offset + joint + 1].x * handCanvas.width,
+                                landmarks[offset + joint + 1].y * handCanvas.height
+                            );
+                            handCtx.stroke();
+                            
+                            // Draw point at each joint with improved visibility
+                            handCtx.beginPath();
+                            handCtx.arc(
+                                landmarks[offset + joint].x * handCanvas.width,
+                                landmarks[offset + joint].y * handCanvas.height,
+                                5, // Increased from 4 for better visibility
+                                0,
+                                2 * Math.PI
+                            );
+                            handCtx.fillStyle = color;
+                            handCtx.fill();
+                        }
+                        
+                        // Draw point at finger tip with improved visibility
+                        handCtx.beginPath();
+                        handCtx.arc(
+                            landmarks[offset + 3].x * handCanvas.width,
+                            landmarks[offset + 3].y * handCanvas.height,
+                            7, // Increased from 6 for better visibility
+                            0,
+                            2 * Math.PI
+                        );
+                        handCtx.fillStyle = color;
+                        handCtx.fill();
+                    }
+                    
+                    // Draw point at wrist with improved visibility
+                    handCtx.beginPath();
+                    handCtx.arc(
+                        landmarks[0].x * handCanvas.width,
+                        landmarks[0].y * handCanvas.height,
+                        6, // Increased from 5 for better visibility
+                        0,
+                        2 * Math.PI
+                    );
+                    handCtx.fillStyle = color;
+                    handCtx.fill();
+                });
+            }
 
             // Send hand data to server if in desktop mode
-            if (!isLocalMode && hasHands) {
+            if (!isLocalMode) {
                 const now = performance.now();
-                if (now - lastHandsTime >= 1000 / TARGET_FPS) {
+                if (now - lastHandsTime >= HAND_TRACKING_INTERVAL) {
                     socket.emit('hands', {
                         landmarks: results.multiHandLandmarks,
                         handedness: results.multiHandedness
@@ -541,17 +1360,70 @@
                     lastHandsTime = now;
                 }
             }
+
+            // Buffer the most recent hand tracking results
+            handTrackingBuffer.push({
+                timestamp: Date.now(),
+                results: JSON.parse(JSON.stringify(results)) // Deep copy
+            });
+            if (handTrackingBuffer.length > HAND_TRACKING_BUFFER_SIZE) {
+                handTrackingBuffer.shift();
+            }
+        }
+
+        function checkPianoKeyPresses(landmarks, isLeftHand) {
+            // Get the index finger tip (landmark 8)
+            const indexTip = landmarks[8];
+            const x = indexTip.x * handCanvas.width;
+            const y = indexTip.y * handCanvas.height;
+            
+            // Check each key for press
+            pianoKeys.forEach((key, index) => {
+                const keyWidth = keySpacing * 0.8; // Make detection area slightly smaller than key width
+                const distance = Math.abs(x - key.x);
+                const verticalDistance = Math.abs(y - key.y);
+                
+                // Check if finger is within the key's bounds
+                if (distance < keyWidth / 2 && verticalDistance < keySpacing) {
+                    if (!key.isPressed) {
+                        // Key is being pressed
+                        key.isPressed = true;
+                        key.pressedBy = isLeftHand ? 'left' : 'right';
+                        
+                        // Visual feedback
+                        const marker = document.createElement('div');
+                        marker.className = 'key-press-marker';
+                        marker.style.position = 'absolute';
+                        marker.style.left = `${x}px`;
+                        marker.style.top = `${y}px`;
+                        marker.style.width = '10px';
+                        marker.style.height = '10px';
+                        marker.style.borderRadius = '50%';
+                        marker.style.backgroundColor = isLeftHand ? 'rgba(255, 107, 107, 0.8)' : 'rgba(78, 205, 196, 0.8)';
+                        marker.style.boxShadow = '0 0 10px rgba(255, 255, 255, 0.5)';
+                        marker.style.zIndex = '20';
+                        document.getElementById('pianoOverlay').appendChild(marker);
+                        
+                        // Remove the marker after a short delay
+                        setTimeout(() => marker.remove(), 200);
+                    }
+                } else if (key.isPressed && key.pressedBy === (isLeftHand ? 'left' : 'right')) {
+                        // Key is being released
+                        key.isPressed = false;
+                        key.pressedBy = null;
+                }
+            });
         }
 
         async function getCameraCapabilities(deviceId) {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { deviceId: { exact: deviceId } }
-                });
-                const track = stream.getVideoTracks()[0];
-                const capabilities = track.getCapabilities();
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId } }
+            });
+            const track = stream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities();
                 const settings = track.getSettings();
-                stream.getTracks().forEach(track => track.stop());
+            stream.getTracks().forEach(track => track.stop());
                 return { capabilities, settings };
             } catch (err) {
                 console.error('Error getting camera capabilities:', err);
@@ -569,6 +1441,12 @@
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const cameras = devices.filter(device => device.kind === 'videoinput');
                 
+                // Log all found cameras
+                logDebug('Found cameras:');
+                cameras.forEach((camera, index) => {
+                    logDebug(`Camera ${index + 1}: ID=${camera.deviceId}, Label=${camera.label || 'Unknown'}`);
+                });
+                
                 // Test each camera to get its capabilities
                 const cameraInfo = await Promise.all(
                     cameras.map(async (camera) => {
@@ -577,7 +1455,7 @@
                                 video: { deviceId: { exact: camera.deviceId } }
                             });
                             const track = stream.getVideoTracks()[0];
-                            const settings = track.getSettings();
+                const settings = track.getSettings();
                             const capabilities = track.getCapabilities();
                             stream.getTracks().forEach(track => track.stop());
                             
@@ -612,16 +1490,16 @@
                 cameraSelect.innerHTML = '<option value="">Loading cameras...</option>';
                 cameraSelect.disabled = true;
 
-                const cameras = await enumerateCameras();
+                availableCameras = await enumerateCameras();
                 
-                if (cameras.length === 0) {
+                if (availableCameras.length === 0) {
                     cameraSelect.innerHTML = '<option value="">No cameras found</option>';
                     updateStatus('No cameras found', true);
                     return;
                 }
 
                 // Show all cameras in the dropdown with their capabilities
-                cameraSelect.innerHTML = cameras.map((camera, index) => {
+                cameraSelect.innerHTML = availableCameras.map((camera, index) => {
                     const label = camera.label;
                     const facingMode = camera.settings.facingMode || 'unknown';
                     const resolution = `${camera.settings.width}x${camera.settings.height}`;
@@ -632,7 +1510,107 @@
                 }).join('');
 
                 cameraSelect.disabled = false;
-                updateStatus(`Found ${cameras.length} cameras - Please test each camera to identify the back camera`);
+                updateStatus(`Found ${availableCameras.length} cameras`);
+
+                // Automatically select camera 3 if available
+                if (availableCameras.length >= 3) {
+                    // Get the third camera's device ID directly from the cameras array
+                    const camera3 = availableCameras[2];
+                    const selectedDeviceId = camera3.deviceId;
+                    
+                    logDebug(`Attempting to start camera 3: ID=${selectedDeviceId}, Label=${camera3.label}`);
+                    
+                    // Stop any existing stream
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                        currentStream = null;
+                    }
+
+                    // Start new stream with explicit constraints
+                    try {
+                        logDebug('Starting camera 3 with device ID: ' + selectedDeviceId);
+                        currentStream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                deviceId: { exact: selectedDeviceId },
+                                width: { ideal: MAX_WIDTH },
+                                height: { ideal: MAX_HEIGHT }
+                            }
+                        });
+
+                        // Update main video element
+                video.srcObject = currentStream;
+                stream = currentStream;
+
+                // Log camera information
+                        const track = currentStream.getVideoTracks()[0];
+                        const settings = track.getSettings();
+                        logDebug(`Initial camera settings: ${JSON.stringify(settings)}`);
+
+                        // Update hand tracking canvas size
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        handCanvas.width = video.videoWidth;
+                        handCanvas.height = video.videoHeight;
+                        logDebug(`Video ready: ${video.videoWidth}x${video.videoHeight}`);
+                        resolve();
+                    };
+                });
+
+                        // Update the dropdown selection to match
+                        cameraSelect.value = selectedDeviceId;
+                        logDebug('Camera 3 selected and initialized');
+
+                // Enable controls
+                        const startButton = document.getElementById('startButton');
+                        const stopButton = document.getElementById('stopButton');
+                        const toggleFullscreen = document.getElementById('toggleFullscreen');
+                        
+                        if (startButton) startButton.style.display = 'none';
+                        if (stopButton) stopButton.disabled = false;
+                        if (toggleFullscreen) toggleFullscreen.disabled = false;
+                        
+                videoContainer.classList.add('active');
+
+                // Setup hand tracking
+                logDebug('Setting up hand tracking');
+                setupHandTracking();
+                const mediaPipeCamera = new Camera(video, {
+                    onFrame: async () => {
+                        const now = performance.now();
+                        const timeSinceLastFrame = now - lastHandTrackingTime;
+                        
+                        // Skip frames if processing is taking too long
+                        if (timeSinceLastFrame < HAND_TRACKING_INTERVAL) {
+                            return;
+                        }
+                        
+                        // Implement frame skipping if lagging
+                        frameSkipCounter++;
+                        if (frameSkipCounter >= FRAME_SKIP_THRESHOLD) {
+                            frameSkipCounter = 0;
+                            return;
+                        }
+                        
+                        if (hands) {
+                            try {
+                                await hands.send({image: video});
+                                lastHandTrackingTime = now;
+                            } catch (err) {
+                                console.error('Hand tracking error:', err);
+                            }
+                        }
+                    },
+                    width: MAX_WIDTH,
+                    height: MAX_HEIGHT
+                });
+                mediaPipeCamera.start();
+
+                        updateStatus('Camera 3 initialized');
+            } catch (err) {
+                        console.error('Error initializing camera 3:', err);
+                        updateStatus('Error initializing camera 3: ' + err.message, true);
+                    }
+                }
 
             } catch (err) {
                 console.error('Error updating camera list:', err);
@@ -670,9 +1648,9 @@
                 try {
                     logDebug('Attempting to start selected camera...');
                     currentStream = await navigator.mediaDevices.getUserMedia({
-                        video: {
+                    video: {
                             deviceId: { exact: selectedDeviceId },
-                            width: { ideal: MAX_WIDTH },
+                        width: { ideal: MAX_WIDTH },
                             height: { ideal: MAX_HEIGHT }
                         }
                     });
@@ -682,8 +1660,10 @@
                     throw err;
                 }
 
+                // Update main video element
                 video.srcObject = currentStream;
                 stream = currentStream;
+                video.play();
 
                 // Log the actual camera settings being used
                 const track = currentStream.getVideoTracks()[0];
@@ -701,24 +1681,68 @@
                 
                 videoContainer.classList.add('active');
 
-                // Setup hand tracking
+                // Setup hand tracking with optimized settings
                 logDebug('Setting up hand tracking');
                 setupHandTracking();
                 const mediaPipeCamera = new Camera(video, {
                     onFrame: async () => {
+                        const now = performance.now();
+                        const timeSinceLastFrame = now - lastHandTrackingTime;
+                        
+                        // Skip frames if processing is taking too long
+                        if (timeSinceLastFrame < HAND_TRACKING_INTERVAL) {
+                            return;
+                        }
+                        
+                        // Implement frame skipping if lagging
+                        frameSkipCounter++;
+                        if (frameSkipCounter >= FRAME_SKIP_THRESHOLD) {
+                            frameSkipCounter = 0;
+                            return;
+                        }
+                        
+                        if (hands) {
+                            try {
                         await hands.send({image: video});
+                            } catch (err) {
+                                console.error('Hand tracking error:', err);
+                            }
+                        }
+                        lastHandTrackingTime = now;
                     },
                     width: MAX_WIDTH,
                     height: MAX_HEIGHT
                 });
                 mediaPipeCamera.start();
 
-                // Set canvas size
+                // Set canvas size and start frame processing
                 await new Promise((resolve) => {
                     video.onloadedmetadata = () => {
+                        localCanvas.width = video.videoWidth;
+                        localCanvas.height = video.videoHeight;
                         handCanvas.width = video.videoWidth;
                         handCanvas.height = video.videoHeight;
                         logDebug(`Video ready: ${video.videoWidth}x${video.videoHeight}`);
+                        
+                        // Start processing frames in local mode
+                        if (isLocalMode) {
+                            function processLocalFrame() {
+                                if (!isLocalMode || !video.videoWidth) return;
+                                
+                                localCtx.drawImage(video, 0, 0);
+                                drawGuidelines(localCtx, video.videoWidth, video.videoHeight);
+                                
+                                // Update the video element with the processed frame
+                                video.srcObject = null;
+                                video.src = localCanvas.toDataURL('image/jpeg');
+                                video.play();
+                                
+                                requestAnimationFrame(processLocalFrame);
+                            }
+                            
+                            processLocalFrame();
+                        }
+                        
                         resolve();
                     };
                 });
@@ -743,6 +1767,7 @@
 
         function stopCamera() {
             isStreaming = false;
+            isPianoDetectionActive = false;
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
                 currentStream = null;
@@ -833,9 +1858,14 @@
         toggleControls.addEventListener('click', toggleControlsMenu);
 
         function showControls() {
-            startButton.style.display = 'block';
-            stopButton.style.display = 'block';
-            toggleFullscreen.style.display = 'block';
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const toggleFullscreen = document.getElementById('toggleFullscreen');
+            
+            if (startButton) startButton.style.display = 'block';
+            if (stopButton) stopButton.style.display = 'block';
+            if (toggleFullscreen) toggleFullscreen.style.display = 'block';
+            
             document.getElementById('modeSelect').classList.add('hidden');
             // Open controls menu initially
             toggleControlsMenu();
@@ -846,6 +1876,12 @@
             debug.style.display = local ? 'none' : 'block';
             updateStatus(local ? 'Local preview mode - Click Start Camera' : 'Desktop streaming mode - Click Start Camera');
             
+            // Stop any existing stream
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+            
             // Show camera selection when mode is selected
             startCamera();
         }
@@ -853,6 +1889,7 @@
         async function toggleFullscreenMode() {
             try {
                 const videoContainer = document.querySelector('.video-container');
+                const container = document.querySelector('.container');
                 
                 if (!document.fullscreenElement) {
                     // Try the standard fullscreen API first
@@ -873,10 +1910,12 @@
                     }
                     
                     videoContainer.classList.add('fullscreen');
-                    screen.orientation?.lock('landscape').catch(() => {
-                        // Ignore if orientation lock fails
-                        console.log('Orientation lock not supported');
-                    });
+                    container.classList.add('fullscreen');
+                    
+                    // Lock orientation
+                    if (screen.orientation && screen.orientation.lock) {
+                        await screen.orientation.lock('landscape');
+                    }
                 } else {
                     // Exit fullscreen
                     if (document.exitFullscreen) {
@@ -896,15 +1935,16 @@
                     }
                     
                     videoContainer.classList.remove('fullscreen');
-                    screen.orientation?.unlock();
+                    container.classList.remove('fullscreen');
+                    
+                    // Unlock orientation
+                    if (screen.orientation && screen.orientation.unlock) {
+                        screen.orientation.unlock();
+                    }
                 }
             } catch (err) {
                 console.error('Fullscreen error:', err);
-                // Fallback method if the Fullscreen API fails
-                const videoContainer = document.querySelector('.video-container');
-                videoContainer.classList.toggle('fullscreen');
-                updateStatus(videoContainer.classList.contains('fullscreen') ? 
-                    'Fullscreen mode enabled' : 'Fullscreen mode disabled');
+                updateStatus('Fullscreen error: ' + err.message, true);
             }
         }
 
@@ -916,35 +1956,87 @@
 
         function handleFullscreenChange() {
             const videoContainer = document.querySelector('.video-container');
-            if (!document.fullscreenElement && 
-                !document.webkitFullscreenElement && 
-                !document.mozFullScreenElement && 
-                !document.msFullscreenElement) {
+            const container = document.querySelector('.container');
+            const isFullscreen = document.fullscreenElement || 
+                               document.webkitFullscreenElement || 
+                               document.mozFullScreenElement || 
+                               document.msFullscreenElement;
+
+            if (isFullscreen) {
+                videoContainer.classList.add('fullscreen');
+                container.classList.add('fullscreen');
+                // Keep controls visible in fullscreen
+                controls.classList.remove('open');
+                toggleControls.style.display = 'block';
+            } else {
                 videoContainer.classList.remove('fullscreen');
-                screen.orientation?.unlock();
+                container.classList.remove('fullscreen');
                 toggleControls.style.display = 'block';
                 if (isControlsOpen) {
                     controls.classList.add('open');
                 }
-            } else {
-                // Hide controls in fullscreen
-                controls.classList.remove('open');
-                toggleControls.style.display = 'none';
             }
         }
 
-        // Add proper event listeners for mode selection
+        // Initialize fullscreen on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Try to enter fullscreen immediately
+            await toggleFullscreenMode();
+            
+            // Add orientation lock
+            await lockOrientation();
+            
+            // Add orientation change listener
+            window.addEventListener('orientationchange', handleOrientationChange);
+            handleOrientationChange(); // Check initial orientation
+            
+            console.log('DOM loaded, attaching event listeners');
+        });
+
+        // Add proper event listeners for all buttons
         document.addEventListener('DOMContentLoaded', () => {
             console.log('DOM loaded, attaching event listeners');
             
-            const localModeBtn = document.getElementById('localMode');
-            const desktopModeBtn = document.getElementById('desktopMode');
+            // Camera control buttons
             const startButton = document.getElementById('startButton');
             const stopButton = document.getElementById('stopButton');
             const toggleFullscreen = document.getElementById('toggleFullscreen');
+            const toggleSettings = document.getElementById('toggleSettings');
+            const calibrateButton = document.getElementById('calibrateButton');
             
-            console.log('Local mode button:', localModeBtn);
-            console.log('Desktop mode button:', desktopModeBtn);
+            if (startButton) {
+                startButton.addEventListener('click', async () => {
+                    console.log('Start button clicked');
+                    await startCamera();
+                });
+            }
+            
+            if (stopButton) {
+                stopButton.addEventListener('click', stopCamera);
+            }
+            
+            if (toggleFullscreen) {
+                toggleFullscreen.addEventListener('click', toggleFullscreenMode);
+            }
+            
+            if (toggleSettings) {
+                toggleSettings.addEventListener('click', () => {
+                    console.log('Toggle settings clicked');
+                    const settingsSection = document.getElementById('settingsSection');
+                    settingsSection.classList.toggle('active');
+                });
+            }
+
+            if (calibrateButton) {
+                calibrateButton.addEventListener('click', () => {
+                    console.log('Calibrate button clicked');
+                    startCalibration();
+                });
+            }
+            
+            // Mode selection buttons
+            const localModeBtn = document.getElementById('localMode');
+            const desktopModeBtn = document.getElementById('desktopMode');
             
             if (localModeBtn) {
                 localModeBtn.addEventListener('click', async () => {
@@ -953,7 +2045,7 @@
                     isLocalMode = true;
                     debug.style.display = 'none';
                     document.getElementById('modeSelect').classList.add('hidden');
-                    await startCamera();
+                    showControls();
                 });
             }
             
@@ -964,34 +2056,33 @@
                     isLocalMode = false;
                     debug.style.display = 'block';
                     document.getElementById('modeSelect').classList.add('hidden');
-                    await startCamera();
+                    showControls();
                 });
             }
-
-            if (startButton) {
-                startButton.addEventListener('click', async () => {
-                    console.log('Start button clicked');
-                    await startCamera();
-                });
-            }
-
-            if (stopButton) {
-                stopButton.addEventListener('click', stopCamera);
-            }
-
-            if (toggleFullscreen) {
-                toggleFullscreen.addEventListener('click', toggleFullscreenMode);
+            
+            // Initialize camera list
+            updateCameraList();
+            
+            // Add camera switch button
+            const cameraSwitch = document.getElementById('cameraSwitch');
+            if (cameraSwitch) {
+                cameraSwitch.addEventListener('click', switchCamera);
             }
         });
 
         socket.on('connect', () => {
             updateStatus('Connected to server');
             logDebug('Socket connected');
+            updateMidiStatus('Waiting for MIDI connection from desktop...');
+            
+            // Request MIDI device status from desktop
+            socket.emit('requestMidiStatus');
         });
 
         socket.on('disconnect', () => {
             updateStatus('Disconnected from server', true);
             logDebug('Socket disconnected');
+            updateMidiStatus('Disconnected from desktop');
         });
 
         socket.on('error', (data) => {
@@ -1059,21 +2150,1944 @@
             }
         });
 
-        // Add settings toggle functionality
-        document.getElementById('toggleSettings').addEventListener('click', () => {
-            const settingsSection = document.getElementById('settingsSection');
-            settingsSection.classList.toggle('active');
+        // Add orientation lock
+        async function lockOrientation() {
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape');
+                    logDebug('Screen orientation locked to landscape');
+                }
+            } catch (err) {
+                console.error('Error locking orientation:', err);
+            }
+        }
+
+        // Add orientation change handler
+        function handleOrientationChange() {
+            const warning = document.querySelector('.orientation-warning');
+            if (window.orientation === 0 || window.orientation === 180) {
+                warning.style.display = 'flex';
+            } else {
+                warning.style.display = 'none';
+            }
+        }
+
+        // Add piano key visualization
+        function updatePianoKeys(keyPositions) {
+            const overlay = document.getElementById('pianoOverlay');
+            overlay.innerHTML = ''; // Clear previous markers
+            
+            if (keyPositions && keyPositions.length > 0) {
+                pianoKeys = keyPositions.map((key, index) => ({
+                    ...key,
+                    isPressed: false,
+                    pressedBy: null // 'left' or 'right' hand
+                }));
+                
+                pianoKeys.forEach((key, index) => {
+                    // Create key marker (hidden)
+                    const marker = document.createElement('div');
+                    marker.className = 'key-marker';
+                    marker.id = `key-${index}`;
+                    marker.setAttribute('data-key', key.name); // Add data-key attribute
+                    marker.style.left = `${key.x}px`;
+                    marker.style.top = '0';
+                    marker.style.height = '100%';
+                    marker.style.width = '4px';
+                    marker.style.backgroundColor = 'rgba(255, 0, 0, 0.8)'; // Make it visible red
+                    marker.style.boxShadow = '0 0 10px rgba(255, 0, 0, 0.5)'; // Add red glow
+                    marker.style.transition = 'all 0.1s ease';
+                    overlay.appendChild(marker);
+                    
+                    // Create key label (hidden)
+                    const label = document.createElement('div');
+                    label.className = 'key-label';
+                    label.id = `label-${index}`;
+                    label.textContent = key.name;
+                    label.style.left = `${key.x}px`;
+                    label.style.top = '20px';
+                    label.style.color = 'transparent'; // Make it transparent
+                    label.style.fontSize = '12px';
+                    label.style.fontWeight = 'bold';
+                    label.style.backgroundColor = 'transparent'; // Make it transparent
+                    label.style.padding = '2px 4px';
+                    label.style.display = 'none'; // Hide it completely
+                    overlay.appendChild(label);
+                });
+            }
+        }
+
+        // Modify the frame handling to properly display the video feed
+        socket.on('frame', (data) => {
+            if (isLocalMode) return;
+            
+            const img = new Image();
+            img.onload = () => {
+                // Create a canvas to draw the frame
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                
+                // Update the video element with the processed frame
+                video.srcObject = null; // Clear any existing stream
+                video.src = canvas.toDataURL('image/jpeg');
+                video.play();
+                
+                // Update debug info
+                debug.textContent = `Frame received: ${img.width}x${img.height}`;
+                
+                // Update hand tracking canvas size
+                handCanvas.width = video.videoWidth;
+                handCanvas.height = video.videoHeight;
+                
+                // Update piano overlay size
+                const pianoOverlay = document.getElementById('pianoOverlay');
+                pianoOverlay.style.width = `${video.videoWidth}px`;
+                pianoOverlay.style.height = `${video.videoHeight}px`;
+            };
+            img.src = 'data:image/jpeg;base64,' + data;
         });
 
-        // Update camera list when page loads
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                await updateCameraList();
-            } catch (err) {
-                console.error('Error initializing cameras:', err);
-                updateStatus('Error initializing cameras: ' + err.message, true);
+        // Add event listener for hand tracking mode change
+        document.getElementById('handTrackingMode').addEventListener('change', () => {
+            if (hands) {
+                setupHandTracking();
+                updateStatus('Hand tracking mode updated');
             }
         });
+
+        function startCalibration() {
+            // Reset all calibration state
+            isCalibrating = true;
+            calibrationPoints = [];
+            firstCalibrationNote = null;
+            secondCalibrationNote = null;
+            stabilityCounter = 0;
+            isFingerLocked = false;
+            waitingForRightHand = true;
+            lastPoint = null;
+            lastPointTime = 0;
+            lastVisualUpdate = 0;
+
+            // Show calibration UI
+            calibrationUI.style.display = 'block';
+            calibrateButton.style.display = 'none';
+            
+            // Hide song selection button during calibration
+            const songSelectButton = document.getElementById('songSelectButton');
+            if (songSelectButton) {
+                songSelectButton.style.display = 'none';
+            }
+            
+            // Reset calibration UI elements
+            document.getElementById('calibrationProgress').textContent = '0/2';
+            document.getElementById('calibrationStatus').textContent = 'Press first key...';
+            document.getElementById('handOrderMessage').textContent = 'Place your RIGHT hand thumb on the first C key';
+            document.getElementById('stabilityIndicator').textContent = 'Hold your thumb still...';
+            document.getElementById('lockStatus').textContent = 'Not locked';
+            document.getElementById('stabilityBar').style.width = '0%';
+            
+            // Clear any existing markers
+            const overlay = document.getElementById('pianoOverlay');
+            if (overlay) {
+                overlay.innerHTML = '';
+            }
+            
+            // Reset piano keys
+            pianoKeys = [];
+            
+            // Clear any stored calibration data
+            localStorage.removeItem('pianoCalibration');
+            
+            if (!isLocalMode) {
+                logDebug('Starting new calibration process');
+                updateStatus('Press any key to start calibration');
+                socket.emit('requestMidiStatus');
+            }
+        }
+
+        function checkStability(currentPoint, lastPoint) {
+            if (!lastPoint) {
+                lastPoint = currentPoint;
+                lastPointTime = Date.now();
+                return false;
+            }
+            
+            // Calculate distance between current and last point
+            const dx = Math.abs(currentPoint.x - lastPoint.x);
+            const dy = Math.abs(currentPoint.y - lastPoint.y);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if point is within stability distance and time threshold
+            const timeDiff = Date.now() - lastPointTime;
+            const isStable = distance < STABILITY_DISTANCE && timeDiff > STABILITY_TIME;
+            
+            // Update stability counter and visual feedback
+            if (isStable) {
+                stabilityCounter++;
+                if (Date.now() - lastVisualUpdate >= VISUAL_UPDATE_INTERVAL) {
+                    document.getElementById('stabilityIndicator').textContent = 
+                        `Thumb stable (${stabilityCounter}/${STABILITY_THRESHOLD})`;
+                    document.getElementById('handOrderMessage').textContent = 
+                        waitingForRightHand ? 
+                        'Keep right thumb steady on C5...' : 
+                        'Keep left thumb steady on C4...';
+                }
+            } else {
+                stabilityCounter = Math.max(0, stabilityCounter - 1);
+                if (Date.now() - lastVisualUpdate >= VISUAL_UPDATE_INTERVAL) {
+                    document.getElementById('stabilityIndicator').textContent = 'Hold thumb still...';
+                }
+            }
+            
+            // Check for finger lock
+            if (stabilityCounter >= FINGER_LOCK_THRESHOLD && !isFingerLocked) {
+                isFingerLocked = true;
+                document.getElementById('lockStatus').textContent = 'Thumb locked! Press key now';
+                document.getElementById('lockStatus').style.color = '#4ecdc4';
+                document.getElementById('handOrderMessage').textContent = 
+                    waitingForRightHand ? 
+                    'Right thumb locked! Press C5 now' : 
+                    'Left thumb locked! Press C4 now';
+                updateStatus(waitingForRightHand ? 
+                    'Right thumb locked! Press C5 now' : 
+                    'Left thumb locked! Press C4 now');
+            }
+            
+            // Update visual feedback
+            if (Date.now() - lastVisualUpdate >= VISUAL_UPDATE_INTERVAL) {
+            const stabilityBar = document.getElementById('stabilityBar');
+            if (stabilityBar) {
+                const progress = Math.min(100, (stabilityCounter / STABILITY_THRESHOLD) * 100);
+                stabilityBar.style.width = `${progress}%`;
+                    stabilityBar.style.backgroundColor = isFingerLocked ? '#00FF00' : '#b388ff';
+                }
+                lastVisualUpdate = Date.now();
+            }
+            
+            return isStable;
+        }
+
+        // Add function to detect key boundaries
+        function detectKeyBoundaries(x, y) {
+            const ctx = handCanvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, handCanvas.width, handCanvas.height);
+            const data = imageData.data;
+            
+            // Function to check if a pixel is white (allowing for more variation)
+            function isWhiteKey(r, g, b) {
+                const brightness = (r + g + b) / 3;
+                // More tolerant white detection
+                return brightness > 180 && 
+                       Math.abs(r - g) < 50 && 
+                       Math.abs(g - b) < 50 && 
+                       Math.abs(r - b) < 50;
+            }
+            
+            // Function to check multiple pixels in a vertical line
+            function checkVerticalLine(x, y) {
+                const samples = 5; // Check multiple points
+                let whiteCount = 0;
+                for (let i = 0; i < samples; i++) {
+                    const sampleY = y + (i - Math.floor(samples/2)) * 10;
+                    if (sampleY < 0 || sampleY >= handCanvas.height) continue;
+                    
+                    const index = (Math.floor(sampleY) * handCanvas.width + Math.floor(x)) * 4;
+                    const r = data[index];
+                    const g = data[index + 1];
+                    const b = data[index + 2];
+                    if (isWhiteKey(r, g, b)) whiteCount++;
+                }
+                return whiteCount >= Math.floor(samples * 0.6); // 60% must be white
+            }
+            
+            // Start scanning from a point higher up
+            y = Math.max(y - 50, 0);
+            
+            // Find left boundary with vertical line checking
+            let leftBound = x;
+            let leftStreak = 0;
+            while (leftBound > 0) {
+                if (!checkVerticalLine(leftBound, y)) {
+                    leftStreak++;
+                    if (leftStreak > 3) { // Require multiple black pixels to confirm boundary
+                        leftBound += 3;
+                        break;
+                    }
+                } else {
+                    leftStreak = 0;
+                }
+                leftBound--;
+            }
+            
+            // Find right boundary with vertical line checking
+            let rightBound = x;
+            let rightStreak = 0;
+            while (rightBound < handCanvas.width) {
+                if (!checkVerticalLine(rightBound, y)) {
+                    rightStreak++;
+                    if (rightStreak > 3) {
+                        rightBound -= 3;
+                        break;
+                    }
+                } else {
+                    rightStreak = 0;
+                }
+                rightBound++;
+            }
+            
+            // Find top boundary
+            let topBound = y;
+            let topStreak = 0;
+            while (topBound > 0) {
+                const index = (Math.floor(topBound) * handCanvas.width + Math.floor(x)) * 4;
+                const r = data[index];
+                const g = data[index + 1];
+                const b = data[index + 2];
+                if (!isWhiteKey(r, g, b)) {
+                    topStreak++;
+                    if (topStreak > 3) {
+                        topBound += 3;
+                        break;
+                    }
+                } else {
+                    topStreak = 0;
+                }
+                topBound--;
+            }
+            
+            // Find bottom boundary
+            let bottomBound = y;
+            let bottomStreak = 0;
+            while (bottomBound < handCanvas.height) {
+                const index = (Math.floor(bottomBound) * handCanvas.width + Math.floor(x)) * 4;
+                const r = data[index];
+                const g = data[index + 1];
+                const b = data[index + 2];
+                if (!isWhiteKey(r, g, b)) {
+                    bottomStreak++;
+                    if (bottomStreak > 3) {
+                        bottomBound -= 3;
+                        break;
+                    }
+                } else {
+                    bottomStreak = 0;
+                }
+                bottomBound++;
+            }
+            
+            // Ensure minimum key width and height
+            const minWidth = 20;
+            const minHeight = 100;
+            const width = rightBound - leftBound;
+            const height = bottomBound - topBound;
+            
+            if (width < minWidth) {
+                const center = (leftBound + rightBound) / 2;
+                leftBound = center - minWidth/2;
+                rightBound = center + minWidth/2;
+            }
+            
+            if (height < minHeight) {
+                const center = (topBound + bottomBound) / 2;
+                topBound = center - minHeight/2;
+                bottomBound = center + minHeight/2;
+            }
+            
+            return {
+                left: leftBound,
+                right: rightBound,
+                top: topBound,
+                bottom: bottomBound
+            };
+        }
+
+        function completeCalibration() {
+            // Filter for only C4 and C5, and pick leftmost C4 and rightmost C5
+            const C4s = calibrationPoints.filter(p => getNoteName(p.note) === 'C4');
+            const C5s = calibrationPoints.filter(p => getNoteName(p.note) === 'C5');
+            let leftmostC4 = null, rightmostC5 = null;
+            if (C4s.length > 0) {
+                leftmostC4 = C4s.reduce((min, p) => p.x < min.x ? p : min, C4s[0]);
+            }
+            if (C5s.length > 0) {
+                rightmostC5 = C5s.reduce((max, p) => p.x > max.x ? p : max, C5s[0]);
+            }
+            if (leftmostC4 && rightmostC5) {
+                calibrationPoints = [leftmostC4, rightmostC5];
+            }
+            if (calibrationPoints.length === 2) {
+                // Sort points by x position to ensure correct order
+                calibrationPoints.sort((a, b) => a.x - b.x);
+                
+                // Clear any existing markers
+                const overlay = document.getElementById('pianoOverlay');
+                overlay.innerHTML = '';
+                
+                // Calculate the average y position for both points
+                const avgY = (calibrationPoints[0].y + calibrationPoints[1].y) / 2;
+                
+                // Adjust points to be at the same height (avgY)
+                calibrationPoints = calibrationPoints.map(point => ({
+                    ...point,
+                    y: avgY
+                }));
+                
+                // --- Manual Fine-Tuning ---
+                let draggingIdx = null;
+                let offset = {x: 0, y: 0};
+                
+                function updateVisuals() {
+                    // Store the button container before clearing
+                    const buttonContainer = overlay.querySelector('.calibration-buttons');
+                    
+                    // Clear the overlay except for the button container
+                    Array.from(overlay.children).forEach(child => {
+                        if (!child.classList.contains('calibration-buttons')) {
+                            child.remove();
+                        }
+                    });
+                    
+                    // Create a clean line container
+                    const lineContainer = document.createElement('div');
+                    lineContainer.style.position = 'absolute';
+                    lineContainer.style.left = '0';
+                    lineContainer.style.top = '0';
+                    lineContainer.style.width = '100%';
+                    lineContainer.style.height = '100%';
+                    lineContainer.style.pointerEvents = 'none';
+                    lineContainer.style.zIndex = '99';
+                    overlay.appendChild(lineContainer);
+
+                    // Draw calibration points with cleaner styling
+                calibrationPoints.forEach((point, index) => {
+                    const isFirstKey = index === 0;
+                    const noteName = getNoteName(point.note);
+                    const color = isFirstKey ? '#FF6B6B' : '#4ECDC4';
+                    
+                        // Create a cleaner thumb marker
+                    const thumbMarker = document.createElement('div');
+                        thumbMarker.className = 'thumb-marker draggable';
+                    thumbMarker.style.position = 'absolute';
+                    thumbMarker.style.left = `${point.x}px`;
+                    thumbMarker.style.top = `${point.y}px`;
+                        thumbMarker.style.width = '16px';
+                        thumbMarker.style.height = '16px';
+                    thumbMarker.style.borderRadius = '50%';
+                    thumbMarker.style.backgroundColor = color;
+                    thumbMarker.style.border = '2px solid white';
+                        thumbMarker.style.boxShadow = `0 0 8px ${color}`;
+                    thumbMarker.style.transform = 'translate(-50%, -50%)';
+                    thumbMarker.style.zIndex = '100';
+                        thumbMarker.style.pointerEvents = 'auto';
+                        thumbMarker.style.touchAction = 'none';
+                        thumbMarker.setAttribute('data-idx', index);
+                    overlay.appendChild(thumbMarker);
+
+                        // Create a cleaner label
+                    const label = document.createElement('div');
+                    label.className = 'key-label';
+                    label.setAttribute('data-key', noteName);
+                    label.textContent = noteName;
+                    label.style.position = 'absolute';
+                    label.style.left = `${point.x}px`;
+                        label.style.top = noteName.includes('#') ? '40%' : '60%';
+                    label.style.backgroundColor = color;
+                        label.style.color = 'white';
+                        label.style.padding = '0px 2px'; // Minimal padding
+                        label.style.borderRadius = '1px'; // Minimal border radius
+                        label.style.fontSize = '6px'; // Extremely small font size
+                        label.style.fontWeight = 'normal'; // Remove bold
+                    label.style.transform = 'translateX(-50%)';
+                        label.style.zIndex = '101';
+                        label.style.boxShadow = 'none'; // Remove shadow
+                        label.style.opacity = '0.6'; // More transparent
+                        label.style.transition = 'opacity 0.2s ease';
+                        label.style.whiteSpace = 'nowrap';
+                        label.style.minWidth = '0';
+                        label.style.maxWidth = '15px'; // Even smaller max width
+                        label.style.overflow = 'hidden';
+                        label.style.textOverflow = 'ellipsis';
+                        label.style.letterSpacing = '-0.5px'; // Tighter letter spacing
+                    overlay.appendChild(label);
+
+                        // Add hover effect to make labels more visible when needed
+                        label.addEventListener('mouseenter', () => {
+                            label.style.opacity = '1';
+                            label.style.maxWidth = 'none';
+                        });
+                        label.addEventListener('mouseleave', () => {
+                            label.style.opacity = '0.6';
+                            label.style.maxWidth = '15px';
+                        });
+                    });
+
+                    // Create a cleaner connecting line
+                    const guideLine = document.createElement('div');
+                    guideLine.style.position = 'absolute';
+                    guideLine.style.left = `${calibrationPoints[0].x}px`;
+                    guideLine.style.top = `${calibrationPoints[0].y}px`;
+                    guideLine.style.width = `${calibrationPoints[1].x - calibrationPoints[0].x}px`;
+                    guideLine.style.height = '2px';
+                    guideLine.style.backgroundColor = 'rgba(255, 255, 255, 0.6)';
+                    guideLine.style.transform = 'translateY(-50%)';
+                    guideLine.style.zIndex = '99';
+                    guideLine.style.boxShadow = '0 0 4px rgba(255, 255, 255, 0.3)';
+                    lineContainer.appendChild(guideLine);
+
+                    // Add subtle vertical lines at each point
+                    calibrationPoints.forEach(point => {
+                        const verticalLine = document.createElement('div');
+                        verticalLine.style.position = 'absolute';
+                        verticalLine.style.left = `${point.x}px`;
+                        verticalLine.style.top = `${point.y - 50}px`;
+                        verticalLine.style.width = '2px';
+                        verticalLine.style.height = '100px';
+                        verticalLine.style.backgroundColor = 'rgba(255, 255, 255, 0.4)';
+                        verticalLine.style.transform = 'translateX(-50%)';
+                        verticalLine.style.zIndex = '99';
+                        verticalLine.style.boxShadow = '0 0 4px rgba(255, 255, 255, 0.2)';
+                        lineContainer.appendChild(verticalLine);
+                    });
+                }
+                updateVisuals();
+                
+                // --- Dragging logic (mouse and touch) ---
+                function onPointerDown(e) {
+                    const target = e.target;
+                    if (!target.classList.contains('draggable')) return;
+                    draggingIdx = parseInt(target.getAttribute('data-idx'));
+                    const rect = overlay.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    offset.x = calibrationPoints[draggingIdx].x - (clientX - rect.left);
+                    offset.y = calibrationPoints[draggingIdx].y - (clientY - rect.top);
+                    document.addEventListener('mousemove', onPointerMove);
+                    document.addEventListener('mouseup', onPointerUp);
+                    document.addEventListener('touchmove', onPointerMove, {passive: false});
+                    document.addEventListener('touchend', onPointerUp);
+                    e.preventDefault();
+                }
+                function onPointerMove(e) {
+                    if (draggingIdx === null) return;
+                    const rect = overlay.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    let newX = clientX - rect.left + offset.x;
+                    let newY = clientY - rect.top + offset.y;
+                    // Clamp to overlay bounds
+                    newX = Math.max(0, Math.min(overlay.offsetWidth, newX));
+                    newY = Math.max(0, Math.min(overlay.offsetHeight, newY));
+                    calibrationPoints[draggingIdx].x = newX;
+                    calibrationPoints[draggingIdx].y = newY;
+                    updateVisuals();
+                    e.preventDefault();
+                }
+                function onPointerUp(e) {
+                    draggingIdx = null;
+                    document.removeEventListener('mousemove', onPointerMove);
+                    document.removeEventListener('mouseup', onPointerUp);
+                    document.removeEventListener('touchmove', onPointerMove);
+                    document.removeEventListener('touchend', onPointerUp);
+                    e.preventDefault();
+                }
+                overlay.addEventListener('mousedown', onPointerDown);
+                overlay.addEventListener('touchstart', onPointerDown, {passive: false});
+                
+                // Create save button container
+                const buttonContainer = document.createElement('div');
+                buttonContainer.className = 'calibration-buttons';
+                buttonContainer.style.position = 'absolute';
+                buttonContainer.style.top = '20px';
+                buttonContainer.style.right = '20px';
+                buttonContainer.style.zIndex = '1000';
+                buttonContainer.style.display = 'flex';
+                buttonContainer.style.gap = '8px';
+                buttonContainer.style.pointerEvents = 'auto';
+                buttonContainer.style.backgroundColor = 'transparent';
+                buttonContainer.style.padding = '0';
+                overlay.appendChild(buttonContainer);
+                
+                // Save button
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = 'Save';
+                saveBtn.className = 'btn';
+                saveBtn.style.backgroundColor = '#4ECDC4';
+                saveBtn.style.color = 'white';
+                saveBtn.style.padding = '6px 12px';
+                saveBtn.style.border = 'none';
+                saveBtn.style.borderRadius = '6px';
+                saveBtn.style.cursor = 'pointer';
+                saveBtn.style.fontSize = '12px';
+                saveBtn.style.fontWeight = 'bold';
+                saveBtn.style.pointerEvents = 'auto';
+                saveBtn.style.position = 'relative';
+                saveBtn.style.zIndex = '1000';
+                saveBtn.style.minWidth = '60px';
+                saveBtn.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+                saveBtn.style.opacity = '1';
+                saveBtn.style.background = '#4ECDC4'; // Force solid background
+                buttonContainer.appendChild(saveBtn);
+                
+                // Cancel button
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.className = 'btn';
+                cancelBtn.style.backgroundColor = '#FF6B6B';
+                cancelBtn.style.color = 'white';
+                cancelBtn.style.padding = '6px 12px';
+                cancelBtn.style.border = 'none';
+                cancelBtn.style.borderRadius = '6px';
+                cancelBtn.style.cursor = 'pointer';
+                cancelBtn.style.fontSize = '12px';
+                cancelBtn.style.fontWeight = 'bold';
+                cancelBtn.style.pointerEvents = 'auto';
+                cancelBtn.style.position = 'relative';
+                cancelBtn.style.zIndex = '1000';
+                cancelBtn.style.minWidth = '60px';
+                cancelBtn.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+                cancelBtn.style.opacity = '1';
+                cancelBtn.style.background = '#FF6B6B'; // Force solid background
+                buttonContainer.appendChild(cancelBtn);
+                
+                // Save button click handler
+                saveBtn.onclick = function() {
+                    // Remove event listeners
+                    overlay.removeEventListener('mousedown', onPointerDown);
+                    overlay.removeEventListener('touchstart', onPointerDown);
+                    overlay.innerHTML = '';
+                    
+                    // Calculate key spacing and first key position
+                    keySpacing = (calibrationPoints[1].x - calibrationPoints[0].x) / 12; // 12 semitones between C4 and C5
+                    firstKeyPosition = calibrationPoints[0].x;
+                    
+                    // Create piano keys array
+                    pianoKeys = [];
+                    const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                    let currentOctave = 4;
+                    let currentNote = 0;
+                    
+                    // Generate all keys from C4 to C5
+                    for (let i = 0; i <= 12; i++) {
+                        const x = firstKeyPosition + (i * keySpacing);
+                        const note = notes[currentNote];
+                        const noteName = `${note}${currentOctave}`;
+                        
+                        // Adjust black key positions to be closer to their respective white keys
+                        let adjustedX = x;
+                        if (note.includes('#')) {
+                            // For black keys, adjust position based on which white key they're closer to
+                            switch(note) {
+                                case 'C#':
+                                    adjustedX = x - (keySpacing * 0.3);
+                                    break;
+                                case 'G#':
+                                    adjustedX = x; // Keep G# centered
+                                    break;
+                                case 'A#':
+                                    adjustedX = x - (keySpacing * 0.1);
+                                    break;
+                            }
+                        } else {
+                            // For white keys, adjust position if needed
+                            switch(note) {
+                                case 'C':
+                                    adjustedX = x + (keySpacing * 0.1);
+                                    break;
+                                case 'E':
+                                    adjustedX = x - (keySpacing * 0.3);
+                                    break;
+                                case 'F':
+                                    adjustedX = x + (keySpacing * 0.3);
+                                    break;
+                                case 'A':
+                                    adjustedX = x - (keySpacing * 0.3);
+                                    break;
+                                case 'B':
+                                    adjustedX = x - (keySpacing * 0.5);
+                                    break;
+                            }
+                        }
+                        
+                        pianoKeys.push({
+                            x: adjustedX,
+                            y: calibrationPoints[0].y,
+                            name: noteName,
+                            isPressed: false,
+                            pressedBy: null
+                        });
+                        
+                        currentNote++;
+                        if (currentNote >= 12) {
+                            currentNote = 0;
+                            currentOctave++;
+                        }
+                    }
+                    
+                    // Update piano overlay with the new keys
+                    updatePianoKeys(pianoKeys);
+                    
+                    // Save calibration data
+                    const calibrationData = {
+                        points: calibrationPoints,
+                        keySpacing: keySpacing,
+                        firstKeyPosition: firstKeyPosition,
+                        pianoKeys: pianoKeys
+                    };
+                    
+                    // Store in localStorage
+                    localStorage.setItem('pianoCalibration', JSON.stringify(calibrationData));
+                    
+                    // Emit calibration data to server if in desktop mode
+                    if (!isLocalMode && socket.connected) {
+                        socket.emit('saveCalibration', calibrationData);
+                    }
+                    
+                    // Clear calibration UI
+                    isCalibrating = false;
+                    calibrationUI.style.display = 'none';
+                    calibrateButton.style.display = 'block';
+                    
+                    // Show song selection button
+                    const songSelectButton = document.getElementById('songSelectButton');
+                    songSelectButton.style.display = 'flex';
+                    
+                    // Remove automatic loading of songs
+                    // loadAvailableSongs();
+                    
+                    updateStatus('Calibration saved and confirmed!');
+                    logDebug('Calibration saved: ' + JSON.stringify(calibrationData));
+                };
+                
+                // Cancel button click handler
+                cancelBtn.onclick = function() {
+                    // Remove event listeners
+                    overlay.removeEventListener('mousedown', onPointerDown);
+                    overlay.removeEventListener('touchstart', onPointerDown);
+                    overlay.innerHTML = '';
+                    
+                    // Reset calibration state
+                    isCalibrating = false;
+                    calibrationPoints = [];
+                    calibrationUI.style.display = 'none';
+                    calibrateButton.style.display = 'block';
+                    updateStatus('Calibration cancelled');
+                };
+                
+                // Show overlay and keep calibration UI visible until saved
+                isCalibrating = true;
+                calibrationUI.style.display = 'block';
+                calibrateButton.style.display = 'none';
+            }
+            
+            // After successful calibration, show the song select button
+            const songSelectButton = document.getElementById('songSelectButton');
+            if (songSelectButton) {
+                songSelectButton.style.display = 'flex';
+                console.log('Song select button displayed after calibration');
+            }
+            
+            // Remove automatic loading of songs
+            // loadAvailableSongs();
+        }
+
+        // Add camera switching functionality
+        async function switchCamera() {
+            try {
+                if (availableCameras.length === 0) {
+                    await updateCameraList();
+                }
+                
+                if (availableCameras.length <= 1) {
+                    updateStatus('No other cameras available', true);
+                    return;
+                }
+                
+                // Increment camera index and wrap around
+                currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+                const nextCamera = availableCameras[currentCameraIndex];
+                
+                // Stop current stream
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                    currentStream = null;
+                }
+                
+                // Start new stream with next camera
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        deviceId: { exact: nextCamera.deviceId },
+                        width: { ideal: MAX_WIDTH },
+                        height: { ideal: MAX_HEIGHT }
+                    }
+                });
+                
+                // Update video element
+                video.srcObject = currentStream;
+                stream = currentStream;
+                
+                // Update camera select dropdown
+                const cameraSelect = document.getElementById('cameraDeviceSelect');
+                if (cameraSelect) {
+                    cameraSelect.value = nextCamera.deviceId;
+                }
+                
+                // Update status
+                updateStatus(`Switched to ${nextCamera.label}`);
+                logDebug(`Switched to camera: ${nextCamera.label}`);
+                
+            } catch (err) {
+                console.error('Error switching camera:', err);
+                updateStatus('Error switching camera: ' + err.message, true);
+            }
+        }
+
+        // Add MIDI state
+        let midiInput = null;
+        let lastMidiNote = null;
+        let midiCalibrationPoints = [];
+        let firstCalibrationNote = null;
+        let secondCalibrationNote = null;
+
+        // Add function to convert MIDI note number to note name
+        function getNoteName(midiNote) {
+            const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const octave = Math.floor(midiNote / 12) - 1;
+            const note = notes[midiNote % 12];
+            return `${note}${octave}`;
+        }
+
+        // General MIDI handler for all modes
+        socket.on('midi', (data) => {
+            try {
+                console.log('📥 Received MIDI message:', data);
+                logDebug('Received MIDI message from desktop: ' + JSON.stringify(data));
+                const { status, note, velocity, note_name } = data;
+                
+                // Only process note_on messages with velocity > 0
+                if (status === 'note_on' && velocity > 0) {
+                    // Create a highlight for the pressed key (hidden)
+                    const keyElement = document.querySelector(`[data-key="${note_name}"]`);
+                    if (keyElement) {
+                        const highlight = document.createElement('div');
+                        highlight.className = 'key-highlight';
+                        highlight.style.position = 'absolute';
+                        highlight.style.left = `${keyElement.offsetLeft}px`;
+                        highlight.style.top = '0';
+                        highlight.style.width = '4px';
+                        highlight.style.height = '100%';
+                        highlight.style.backgroundColor = 'rgba(0, 255, 255, 0)'; // Make it transparent
+                        highlight.style.boxShadow = 'none'; // Remove shadow
+                        highlight.style.zIndex = '20';
+                        
+                        // Add note label (hidden)
+                        const label = document.createElement('div');
+                        label.className = 'key-label';
+                        label.textContent = note_name;
+                        label.style.position = 'absolute';
+                        label.style.left = `${keyElement.offsetLeft}px`;
+                        label.style.top = '20px';
+                        label.style.transform = 'translateX(-50%)';
+                        label.style.color = 'transparent'; // Make it transparent
+                        label.style.backgroundColor = 'transparent'; // Make it transparent
+                        label.style.padding = '2px 6px';
+                        label.style.borderRadius = '4px';
+                        label.style.fontSize = '14px';
+                        label.style.fontWeight = 'bold';
+                        label.style.display = 'none'; // Hide it completely
+                        
+                        // Add to piano overlay
+                        const overlay = document.getElementById('pianoOverlay');
+                        if (overlay) {
+                            overlay.appendChild(highlight);
+                            overlay.appendChild(label);
+                            
+                            // Remove highlight and label after 500ms
+                            setTimeout(() => {
+                                highlight.style.opacity = '0';
+                                label.style.opacity = '0';
+                                setTimeout(() => {
+                                    highlight.remove();
+                                    label.remove();
+                                }, 300);
+                            }, 500);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('❌ Error processing MIDI message:', err);
+                logDebug('Error processing MIDI message: ' + err.message);
+            }
+        });
+
+        // Handle MIDI messages from desktop (calibration mode)
+        socket.on('midi', (data) => {
+            try {
+                console.log('📥 Received MIDI message:', data);
+                logDebug('Received MIDI message from desktop: ' + JSON.stringify(data));
+                const { status, note, velocity } = data;
+                
+                if (isCalibrating) {
+                    console.log('🔍 Processing MIDI message during calibration');
+                    
+                    if (!firstCalibrationNote) {
+                        firstCalibrationNote = note;
+                        document.getElementById('handOrderMessage').textContent = 
+                            `First key: ${getNoteName(note)}. Press second key...`;
+                        updateStatus(`First key: ${getNoteName(note)}. Press second key...`);
+                        return;
+                    }
+                    
+                    if (!secondCalibrationNote) {
+                        secondCalibrationNote = note;
+                        document.getElementById('handOrderMessage').textContent = 
+                            `Second key: ${getNoteName(note)}. Calibration complete.`;
+                        updateStatus(`Second key: ${getNoteName(note)}. Calibration complete.`);
+                    }
+
+                    let thumbPosition = null;
+                    let debugHandInfo = '';
+                    if (handTrackingBuffer.length > 0) {
+                        const latest = handTrackingBuffer[handTrackingBuffer.length - 1].results;
+                        if (latest && latest.multiHandLandmarks && latest.multiHandLandmarks.length > 0 && latest.multiHandedness) {
+                            let targetHandLabel = null;
+                            if (note === firstCalibrationNote) {
+                                targetHandLabel = 'Left';
+                            } else if (note === secondCalibrationNote) {
+                                targetHandLabel = 'Right';
+                            }
+                            
+                            let found = false;
+                            for (let i = 0; i < latest.multiHandLandmarks.length; i++) {
+                                const handedness = latest.multiHandedness[i].label;
+                                if (handedness === targetHandLabel) {
+                                    const thumbTip = latest.multiHandLandmarks[i][4];
+                                    
+                                    thumbPosition = {
+                                        x: Math.round(thumbTip.x * handCanvas.width),
+                                        y: Math.round(thumbTip.y * handCanvas.height),
+                                        note: note
+                                    };
+                                    debugHandInfo = `Used ${targetHandLabel} hand (index ${i}) thumb tip: (${thumbPosition.x},${thumbPosition.y})`;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!found) {
+                                const thumbTip = latest.multiHandLandmarks[0][4];
+                                
+                                thumbPosition = {
+                                    x: Math.round(thumbTip.x * handCanvas.width),
+                                    y: Math.round(thumbTip.y * handCanvas.height),
+                                    note: note
+                                };
+                                debugHandInfo = `Fallback to first hand thumb tip: (${thumbPosition.x},${thumbPosition.y})`;
+                            }
+                        }
+                    }
+                    
+                    if (!thumbPosition) {
+                        thumbPosition = {
+                            x: Math.round(handCanvas.width * (note === firstCalibrationNote ? 0.3 : 0.7)),
+                            y: Math.round(handCanvas.height * 0.5),
+                            note: note
+                        };
+                        debugHandInfo = `Fallback position used: (${thumbPosition.x},${thumbPosition.y})`;
+                    }
+                    
+                    logDebug(`Calibration MIDI: note=${note}, position=(${thumbPosition.x},${thumbPosition.y})\n${debugHandInfo}`);
+                    calibrationPoints.push(thumbPosition);
+                    console.log('📌 Added calibration point:', thumbPosition);
+                    document.getElementById('calibrationProgress').textContent = 
+                        `${calibrationPoints.length}/2`;
+                    
+                    if (calibrationPoints.length === 1) {
+                        document.getElementById('calibrationStatus').textContent = 
+                            `First key (${getNoteName(firstCalibrationNote)}) captured. Waiting for second key...`;
+                    } else {
+                        if (calibrationUI && calibrationUI.parentNode) {
+                            calibrationUI.parentNode.removeChild(calibrationUI);
+                        }
+                        
+                        completeCalibration();
+                    }
+                }
+            } catch (err) {
+                console.error('❌ Error processing MIDI message:', err);
+                logDebug('Error processing MIDI message: ' + err.message);
+            }
+        });
+
+        // Handle MIDI device connection from desktop
+        socket.on('midiDevice', (data) => {
+            try {
+                const { connected, deviceName } = data;
+                if (connected) {
+                    logDebug(`MIDI device connected on desktop: ${deviceName}`);
+                    updateMidiStatus(`Connected to desktop MIDI: ${deviceName}`);
+                    updateStatus(`MIDI device connected: ${deviceName}`);
+                } else {
+                    logDebug('MIDI device disconnected on desktop');
+                    updateMidiStatus('No MIDI device connected on desktop');
+                }
+            } catch (err) {
+                logDebug('Error processing MIDI device status: ' + err.message);
+            }
+        });
+
+        // Add periodic MIDI status check
+        setInterval(() => {
+            if (socket.connected) {
+                socket.emit('requestMidiStatus');
+            }
+        }, 5000); // Check every 5 seconds
+
+        function updateMidiStatus(message) {
+            const midiStatus = document.getElementById('midiStatus');
+            if (midiStatus) {
+                midiStatus.textContent = message;
+                logDebug('MIDI status updated: ' + message);
+            }
+        }
+
+        function handleMidiMessage(message) {
+            const [status, note, velocity] = message;
+            const isNoteOn = (status & 0xF0) === 0x90 && velocity > 0;
+            
+            if (isNoteOn && isCalibrating) {
+                logDebug(`Processing MIDI note: ${note} (velocity: ${velocity})`);
+                
+                // Check if this is a C note (C4 or C5)
+                if (note === MIDI_NOTE_C4 || note === MIDI_NOTE_C5) {
+                    logDebug(`C note detected: ${note === MIDI_NOTE_C4 ? 'C4' : 'C5'}`);
+                    
+                    // Get current hand position - C4 is left hand, C5 is right hand
+                    const currentHand = note === MIDI_NOTE_C4 ? 'left' : 'right';
+                    const currentPoint = {
+                        x: lastPoint ? lastPoint.x : handCanvas.width / 2,
+                        y: lastPoint ? lastPoint.y : handCanvas.height / 2,
+                        isLeftHand: note === MIDI_NOTE_C4
+                    };
+                    
+                    // Add MIDI calibration point
+                    midiCalibrationPoints.push({
+                        note,
+                        point: currentPoint,
+                        hand: currentHand
+                    });
+                    
+                    logDebug(`Added MIDI calibration point for ${currentHand} hand at note ${note}`);
+                    
+                    // If we have both C4 and C5, complete calibration
+                    if (midiCalibrationPoints.length === 2) {
+                        logDebug('Both MIDI calibration points collected');
+                        completeMidiCalibration();
+                    } else if (midiCalibrationPoints.length === 1) {
+                        // First point captured, now wait for the other hand
+                        waitingForRightHand = !waitingForRightHand;
+                        document.getElementById('calibrationStatus').textContent = 
+                            waitingForRightHand ? 'Waiting for right hand...' : 'Waiting for left hand...';
+                        document.getElementById('handOrderMessage').textContent = 
+                            waitingForRightHand ? 'Press C5 on MIDI keyboard for right hand' :
+                            'Press C4 on MIDI keyboard for left hand';
+                    }
+                }
+            }
+        }
+
+        function completeMidiCalibration() {
+            if (midiCalibrationPoints.length === 2) {
+                // Sort points by note (C4 first, then C5)
+                midiCalibrationPoints.sort((a, b) => a.note - b.note);
+                
+                // Use MIDI points for calibration
+                calibrationPoints = midiCalibrationPoints.map(p => p.point);
+                completeCalibration();
+                
+                // Reset MIDI calibration
+                midiCalibrationPoints = [];
+                lastMidiNote = null;
+            }
+        }
+
+        // Add MIDI device selection handler
+        document.getElementById('midiDeviceSelect').addEventListener('change', (e) => {
+            selectMidiDevice(e.target.value);
+        });
+
+        // Initialize MIDI when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeMIDI();
+        });
+
+        // Add piano learning mode state
+        let pianoLearningMode = false;
+        let currentTargetNote = null;
+        let noteStartTime = null;
+        let currentSong = null;
+        let currentNoteIndex = 0;
+        let correctNotes = 0;
+        let totalNotes = 0;
+        let noteTimeout = null;
+        let pianoLearningHighlight = null;  // Renamed from currentHighlight
+        let pianoLearningLabel = null;      // Renamed from currentLabel
+        let pianoLearningIsPlaying = false;  // Renamed from isPlaying
+
+        // Add function to load available songs
+        async function loadAvailableSongs() {
+            const status = document.getElementById('status');
+            status.textContent = 'Loading songs...';
+            
+            try {
+                const response = await fetch('/get_songs');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const songs = await response.json();
+                status.textContent = `Found ${songs.length} songs`;
+                
+                const dropdown = document.getElementById('songSelectDropdown');
+                if (!dropdown) {
+                    throw new Error('Song selection dropdown not found');
+                }
+                
+                // Add sorting controls
+                dropdown.innerHTML = `
+                    <h3>Select a song</h3>
+                    <div class="sort-controls">
+                        <button class="sort-button" data-sort="title">Title</button>
+                        <button class="sort-button" data-sort="difficulty">Difficulty</button>
+                        <button class="sort-button" data-sort="tempo">Tempo</button>
+                    </div>
+                `;
+
+                // Add click handlers for sort buttons
+                const sortButtons = dropdown.querySelectorAll('.sort-button');
+                sortButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        // Remove active class from all buttons
+                        sortButtons.forEach(btn => btn.classList.remove('active'));
+                        // Add active class to clicked button
+                        button.classList.add('active');
+                        // Sort songs
+                        const sortBy = button.dataset.sort;
+                        songs.sort((a, b) => {
+                            if (sortBy === 'title') {
+                                return a.title.localeCompare(b.title);
+                            } else {
+                                return a[sortBy] - b[sortBy];
+                            }
+                        });
+                        // Update display
+                        displaySongs(songs);
+                    });
+                });
+                
+                // Initial display of songs
+                displaySongs(songs);
+                
+                status.textContent = 'Songs loaded successfully';
+            } catch (err) {
+                status.textContent = 'Error loading songs: ' + err.message;
+                status.className = 'status error';
+            }
+        }
+
+        // Function to display songs
+        function displaySongs(songs) {
+            const dropdown = document.getElementById('songSelectDropdown');
+            const songsContainer = document.createElement('div');
+            
+            songs.forEach(song => {
+                const option = document.createElement('div');
+                option.className = 'song-option';
+                option.innerHTML = `
+                    <div class="song-title">${song.title}</div>
+                    <div class="song-details">
+                        Difficulty: ${song.difficulty} | Tempo: ${song.tempo} BPM | Time: ${song.time_signature} | Key: ${song.key}
+                    </div>
+                `;
+                option.onclick = () => {
+                    const status = document.getElementById('status');
+                    status.textContent = `Loading ${song.title}...`;
+                    selectSong(song);
+                    dropdown.classList.remove('active');
+                };
+                songsContainer.appendChild(option);
+            });
+            
+            // Replace existing songs with new sorted list
+            const existingSongs = dropdown.querySelector('.sort-controls').nextSibling;
+            if (existingSongs) {
+                existingSongs.remove();
+            }
+            dropdown.appendChild(songsContainer);
+        }
+
+        // Add function to select a song
+        async function selectSong(song) {
+            try {
+                if (!song || !song.filename) {
+                    throw new Error('Invalid song data');
+                }
+
+                updateStatus(`Loading ${song.title}...`);
+                const response = await fetch(`/get_song/${song.filename}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const songData = await response.json();
+                
+                // Validate song data format
+                if (!songData || !songData.title || !songData.notes || !Array.isArray(songData.notes)) {
+                    throw new Error('Invalid song data format');
+                }
+
+                // Store the song data
+                currentSong = songData;
+                currentNoteIndex = 0;
+                pianoLearningIsPlaying = false; // Reset playing state
+                
+                // Remove any existing highlights
+                if (pianoLearningHighlight) {
+                    pianoLearningHighlight.remove();
+                    pianoLearningHighlight = null;
+                }
+                if (pianoLearningLabel) {
+                    pianoLearningLabel.remove();
+                    pianoLearningLabel = null;
+                }
+
+                updateStatus(`Selected song: ${songData.title}`);
+                
+                // Make status message disappear after 3 seconds
+                setTimeout(() => {
+                    const status = document.getElementById('status');
+                    if (status) {
+                        status.textContent = '';
+                        status.style.display = 'none';
+                    }
+                }, 3000);
+                
+                // Start playing mode
+                startPlayingMode();
+                
+            } catch (err) {
+                console.error('Error loading song data:', err);
+                updateStatus('Error loading song data: ' + err.message, true);
+                // Reset state on error
+                currentSong = null;
+                currentNoteIndex = 0;
+                pianoLearningIsPlaying = false;
+            }
+        }
+
+        // Add function to start playing mode
+        function startPlayingMode() {
+            if (!currentSong) {
+                updateStatus('No song selected', true);
+                return;
+            }
+            
+            pianoLearningIsPlaying = true;
+            currentNoteIndex = 0;
+            
+            socket.emit('playmode_debug', {
+                event: 'start',
+                song: currentSong.title,
+                total_notes: currentSong.notes.length
+            });
+            
+            // Add event listener for key presses
+            document.addEventListener('keydown', handleKeyPress);
+            
+            // Show first note
+            showCurrentNote();
+        }
+
+        // Add function to show current note
+        function showCurrentNote() {
+            if (!pianoLearningIsPlaying || !currentSong || currentNoteIndex >= currentSong.notes.length) {
+                stopPlayingMode();
+                return;
+            }
+            
+            const noteData = currentSong.notes[currentNoteIndex];
+            if (!noteData || !noteData.note) {
+                updateStatus('Invalid note data', true);
+                return;
+            }
+
+            // Handle both single notes and chord notes
+            const notes = Array.isArray(noteData.note) ? noteData.note : [noteData.note];
+            const fingers = Array.isArray(noteData.finger) ? noteData.finger : [noteData.finger];
+            
+            // Get next note data if available
+            const nextNoteData = currentNoteIndex + 1 < currentSong.notes.length ? 
+                currentSong.notes[currentNoteIndex + 1] : null;
+            
+            console.log('Showing note:', {
+                notes: notes,
+                fingers: fingers,
+                index: currentNoteIndex,
+                total_notes: currentSong.notes.length,
+                next_note: nextNoteData ? nextNoteData.note : null
+            });
+            
+            // Remove any existing finger labels
+            const existingFingerLabels = document.querySelectorAll('.key-label[data-note]');
+            existingFingerLabels.forEach(label => label.remove());
+            
+            // Add finger labels for current notes
+            notes.forEach((note, index) => {
+                const keyElement = document.querySelector(`[data-key="${note}"]`);
+                if (keyElement) {
+                    const fingerLabel = document.createElement('div');
+                    fingerLabel.className = 'key-label';
+                    fingerLabel.textContent = fingers[index];
+                    fingerLabel.setAttribute('data-note', note);
+                    fingerLabel.style.position = 'absolute';
+                    fingerLabel.style.left = `${keyElement.offsetLeft}px`;
+                    fingerLabel.style.top = note.includes('#') ? '40%' : '60%';
+                    fingerLabel.style.transform = 'translate(-50%, -50%)';
+                    fingerLabel.style.color = '#ffffff';
+                    fingerLabel.style.backgroundColor = noteData.hand === 'left' ? 'rgba(255, 107, 107, 0.9)' : 'rgba(78, 205, 196, 0.9)';
+                    fingerLabel.style.padding = '6px';
+                    fingerLabel.style.borderRadius = '50%';
+                    fingerLabel.style.fontSize = '16px';
+                    fingerLabel.style.fontWeight = 'bold';
+                    fingerLabel.style.zIndex = '30';
+                    fingerLabel.style.width = '32px';
+                    fingerLabel.style.height = '32px';
+                    fingerLabel.style.display = 'flex';
+                    fingerLabel.style.alignItems = 'center';
+                    fingerLabel.style.justifyContent = 'center';
+                    fingerLabel.style.transition = 'all 0.3s ease';
+                    fingerLabel.style.boxShadow = noteData.hand === 'left' ? '0 0 15px rgba(255, 107, 107, 0.5)' : '0 0 15px rgba(78, 205, 196, 0.5)';
+                    fingerLabel.style.border = '2px solid rgba(255, 255, 255, 0.8)';
+                    fingerLabel.style.animation = 'pulse 2s infinite';
+                    fingerLabel.style.pointerEvents = 'none'; // Add this line to prevent interference with key detection
+
+                    // Add to piano overlay
+                    const overlay = document.getElementById('pianoOverlay');
+                    if (overlay) {
+                        overlay.appendChild(fingerLabel);
+                    }
+                }
+            });
+
+            // Add next note's finger labels if available
+            if (nextNoteData) {
+                const nextNotes = Array.isArray(nextNoteData.note) ? nextNoteData.note : [nextNoteData.note];
+                const nextFingers = Array.isArray(nextNoteData.finger) ? nextNoteData.finger : [nextNoteData.finger];
+                
+                nextNotes.forEach((note, index) => {
+                    const nextKeyElement = document.querySelector(`[data-key="${note}"]`);
+                    if (nextKeyElement) {
+                        const nextFingerLabel = document.createElement('div');
+                        nextFingerLabel.className = 'key-label';
+                        nextFingerLabel.textContent = nextFingers[index];
+                        nextFingerLabel.setAttribute('data-note', note);
+                        nextFingerLabel.style.position = 'absolute';
+                        nextFingerLabel.style.left = `${nextKeyElement.offsetLeft}px`;
+                        nextFingerLabel.style.top = note.includes('#') ? '40%' : '60%';
+                        nextFingerLabel.style.transform = 'translate(-50%, -50%)';
+                        nextFingerLabel.style.color = '#ffffff';
+                        nextFingerLabel.style.backgroundColor = nextNoteData.hand === 'left' ? 'rgba(255, 107, 107, 0.3)' : 'rgba(78, 205, 196, 0.3)';
+                        nextFingerLabel.style.padding = '6px';
+                        nextFingerLabel.style.borderRadius = '50%';
+                        nextFingerLabel.style.fontSize = '14px';
+                        nextFingerLabel.style.fontWeight = 'bold';
+                        nextFingerLabel.style.zIndex = '25';
+                        nextFingerLabel.style.width = '20px';
+                        nextFingerLabel.style.height = '20px';
+                        nextFingerLabel.style.display = 'flex';
+                        nextFingerLabel.style.alignItems = 'center';
+                        nextFingerLabel.style.justifyContent = 'center';
+                        nextFingerLabel.style.transition = 'all 0.3s ease';
+                        nextFingerLabel.style.boxShadow = nextNoteData.hand === 'left' ? '0 0 10px rgba(255, 107, 107, 0.3)' : '0 0 10px rgba(78, 205, 196, 0.3)';
+                        nextFingerLabel.style.border = '2px solid rgba(255, 255, 255, 0.3)';
+                        nextFingerLabel.style.pointerEvents = 'auto';
+
+                        const overlay = document.getElementById('pianoOverlay');
+                        if (overlay) {
+                            overlay.appendChild(nextFingerLabel);
+                        }
+                    }
+                });
+            }
+            
+            const playNoteDiv = document.getElementById('playNoteMessage');
+            if (playNoteDiv) {
+                const noteText = notes.length > 1 ? notes.join(', ') : notes[0];
+                const fingerText = fingers.length > 1 ? fingers.join(', ') : fingers[0];
+                const isChord = notes.length > 1;
+                playNoteDiv.textContent = `Play ${isChord ? 'chord' : 'note'}: ${noteText} with finger${isChord ? 's' : ''} ${fingerText}`;
+                playNoteDiv.style.display = 'block';
+            }
+        }
+
+        // Add function to handle key press
+        function handleKeyPress(event) {
+            if (!pianoLearningIsPlaying || !currentSong) return;
+            
+            const noteData = currentSong.notes[currentNoteIndex];
+            const expectedNotes = Array.isArray(noteData.note) ? noteData.note : [noteData.note];
+            
+            // Get the pressed key from the event
+            const pressedKey = event.key.toUpperCase();
+            
+            // Find the finger label for the pressed note
+            const fingerLabel = document.querySelector(`.key-label[data-note="${pressedKey}"]`);
+            if (fingerLabel) {
+                // Add highlight effect
+                fingerLabel.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+                fingerLabel.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.5)';
+                fingerLabel.style.color = 'white';
+                fingerLabel.style.transform = 'translate(-50%, -50%) scale(1.2)';
+                
+                // Remove highlight after a longer delay
+                setTimeout(() => {
+                    fingerLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                    fingerLabel.style.boxShadow = 'none';
+                    fingerLabel.style.color = 'white';
+                    fingerLabel.style.transform = 'translate(-50%, -50%) scale(1)';
+                }, 1000);
+            }
+            
+            // Check if the pressed key matches any of the expected notes
+            if (expectedNotes.includes(pressedKey)) {
+                // Correct note played
+                if (pianoLearningHighlight) {
+                    pianoLearningHighlight.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+                    pianoLearningHighlight.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.5)';
+                }
+                
+                // Move to next note after a short delay
+                setTimeout(() => {
+                    // Remove current highlight and label
+                    if (pianoLearningHighlight) pianoLearningHighlight.remove();
+                    if (pianoLearningLabel) pianoLearningLabel.remove();
+                    
+                    currentNoteIndex++;
+                    if (currentNoteIndex < currentSong.notes.length) {
+                        showCurrentNote();
+                    } else {
+                        // Song completed
+                        stopPlayingMode();
+                        updateStatus('Song completed!');
+                    }
+                }, 500);
+            } else {
+                // Wrong note played
+                if (pianoLearningHighlight) {
+                    pianoLearningHighlight.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+                    pianoLearningHighlight.style.boxShadow = '0 0 10px rgba(255, 0, 0, 0.5)';
+                }
+                updateStatus('Wrong note! Try again');
+            }
+        }
+
+        // Add function to stop playing mode
+        function stopPlayingMode() {
+            socket.emit('playmode_debug', {
+                event: 'end',
+                song: currentSong ? currentSong.title : 'none',
+                completed: currentNoteIndex >= currentSong.notes.length,
+                final_index: currentNoteIndex,
+                total_notes: currentSong.notes.length
+            });
+            
+            pianoLearningIsPlaying = false;
+            if (pianoLearningHighlight) pianoLearningHighlight.remove();
+            if (pianoLearningLabel) pianoLearningLabel.remove();
+            document.removeEventListener('keydown', handleKeyPress);
+            updateStatus('Playing mode stopped');
+            const playNoteDiv = document.getElementById('playNoteMessage');
+            if (playNoteDiv) playNoteDiv.style.display = 'none';
+        }
+
+        // Add variables to track current highlight and label
+        let currentHighlight = null;
+        let currentLabel = null;
+
+        // Add event listener for the piano learning button
+        document.getElementById('pianoLearningButton').addEventListener('click', function() {
+            if (!pianoLearningIsPlaying) {
+                startPianoLearningMode();
+            } else {
+                stopPianoLearningMode();
+            }
+        });
+
+        // Add MIDI note handling for learning mode
+        socket.on('midi', (data) => {
+            if (pianoLearningIsPlaying && data.status === 0x90 && data.velocity > 0) {
+                const noteName = getNoteName(data.note);
+                
+                // Find the finger label for the pressed note
+                const fingerLabel = document.querySelector(`.key-label[data-note="${noteName}"]`);
+                if (fingerLabel) {
+                    // Add highlight effect
+                    fingerLabel.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+                    fingerLabel.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.5)';
+                    fingerLabel.style.color = 'white';
+                    fingerLabel.style.transform = 'translate(-50%, -50%) scale(1.2)';
+                    
+                    // Remove highlight after a longer delay
+                    setTimeout(() => {
+                        fingerLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                        fingerLabel.style.boxShadow = 'none';
+                        fingerLabel.style.color = 'white';
+                        fingerLabel.style.transform = 'translate(-50%, -50%) scale(1)';
+                    }, 1000); // Increased from 500ms to 1000ms
+                }
+                
+                socket.emit('playmode_debug', {
+                    event: 'midi_keypress',
+                    pressed: noteName,
+                    expected: currentSong ? currentSong.notes[currentNoteIndex].note : 'none',
+                    correct: currentSong && noteName === currentSong.notes[currentNoteIndex].note,
+                    current_index: currentNoteIndex,
+                    total_notes: currentSong ? currentSong.notes.length : 0,
+                    highlighted_note: pianoLearningHighlight ? pianoLearningHighlight.getAttribute('data-note') : 'none',
+                    midi_note: data.note,
+                    velocity: data.velocity,
+                    debug_info: {
+                        noteName_type: typeof noteName,
+                        expected_type: typeof (currentSong ? currentSong.notes[currentNoteIndex].note : 'none'),
+                        noteName_value: noteName,
+                        expected_value: currentSong ? currentSong.notes[currentNoteIndex].note : 'none',
+                        comparison_result: noteName === (currentSong ? currentSong.notes[currentNoteIndex].note : 'none')
+                    }
+                });
+
+                // Check if this is the expected note
+                if (currentSong && noteName === currentSong.notes[currentNoteIndex].note) {
+                    console.log('Note match! Changing highlight to green');
+                    // Correct note played
+                    if (pianoLearningHighlight) {
+                        pianoLearningHighlight.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+                        pianoLearningHighlight.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.5)';
+                    } else {
+                        console.log('No highlight element found to change color');
+                    }
+                    
+                    // Move to next note after a short delay
+                    setTimeout(() => {
+                        // Remove current highlight and label
+                        if (pianoLearningHighlight) pianoLearningHighlight.remove();
+                        if (pianoLearningLabel) pianoLearningLabel.remove();
+                        
+                        currentNoteIndex++;
+                        if (currentNoteIndex < currentSong.notes.length) {
+                            showCurrentNote();
+                        } else {
+                            // Song completed
+                            stopPlayingMode();
+                            updateStatus('Song completed!');
+                        }
+                    }, 500);
+                } else {
+                    console.log('Note mismatch:', {
+                        pressed: noteName,
+                        expected: currentSong ? currentSong.notes[currentNoteIndex].note : 'none'
+                    });
+                    // Wrong note played
+                    if (pianoLearningHighlight) {
+                        pianoLearningHighlight.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+                        pianoLearningHighlight.style.boxShadow = '0 0 10px rgba(255, 0, 0, 0.5)';
+                    }
+                    updateStatus('Wrong note! Try again');
+                }
+            }
+        });
+
+        // Add key highlighting visualization with debugging
+        socket.on('key_highlight', (data) => {
+            const { x, y, width, height, color, opacity, blur, duration, note_name } = data;
+            
+            console.log(`[Frontend] Highlighting key: ${note_name} at (${x}, ${y})`);
+            
+            // Create highlight element (hidden)
+            const highlight = document.createElement('div');
+            highlight.className = 'key-highlight';
+            highlight.style.position = 'absolute';
+            highlight.style.left = `${x}px`;
+            highlight.style.top = `${y}px`;
+            highlight.style.width = `${width}px`;
+            highlight.style.height = `${height}px`;
+            highlight.style.backgroundColor = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0)`; // Make it transparent
+            highlight.style.filter = 'none'; // Remove blur
+            highlight.style.transition = `all ${duration}ms ease-out`;
+            highlight.style.zIndex = '10';
+            highlight.style.border = 'none'; // Remove border
+            highlight.style.borderRadius = '4px';
+            
+            // Add note label (hidden)
+            const label = document.createElement('div');
+            label.className = 'key-label';
+            label.textContent = note_name;
+            label.style.position = 'absolute';
+            label.style.top = '-25px';
+            label.style.left = '50%';
+            label.style.transform = 'translateX(-50%)';
+            label.style.color = 'transparent'; // Make it transparent
+            label.style.backgroundColor = 'transparent'; // Make it transparent
+            label.style.padding = '2px 6px';
+            label.style.borderRadius = '4px';
+            label.style.fontSize = '14px';
+            label.style.fontWeight = 'bold';
+            label.style.display = 'none'; // Hide it completely
+            highlight.appendChild(label);
+            
+            // Add to piano overlay
+            const overlay = document.getElementById('pianoOverlay');
+            if (overlay) {
+                overlay.appendChild(highlight);
+            }
+        });
+
+        // Create connected lines between points
+        const lineContainer = document.createElement('div');
+        lineContainer.style.position = 'absolute';
+        lineContainer.style.left = '0';
+        lineContainer.style.top = '0';
+        lineContainer.style.width = '100%';
+        lineContainer.style.height = '100%';
+        lineContainer.style.pointerEvents = 'none';
+        lineContainer.style.zIndex = '99';
+        overlay.appendChild(lineContainer);
+
+        // Horizontal line
+        const horizontalLine = document.createElement('div');
+        horizontalLine.style.position = 'absolute';
+        horizontalLine.style.left = `${calibrationPoints[0].x}px`;
+        horizontalLine.style.top = `${calibrationPoints[0].y}px`;
+        horizontalLine.style.width = `${calibrationPoints[1].x - calibrationPoints[0].x}px`;
+        horizontalLine.style.height = '4px';
+        horizontalLine.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+        horizontalLine.style.transform = 'translateY(-50%)';
+        horizontalLine.style.boxShadow = '0 0 5px rgba(255, 255, 255, 0.5)';
+        lineContainer.appendChild(horizontalLine);
+
+        // Vertical line at C4
+        const verticalLineC4 = document.createElement('div');
+        verticalLineC4.style.position = 'absolute';
+        verticalLineC4.style.left = `${calibrationPoints[0].x}px`;
+        verticalLineC4.style.top = `${calibrationPoints[0].y - 50}px`; // Start 50px above the point
+        verticalLineC4.style.width = '4px';
+        verticalLineC4.style.height = '100px'; // Fixed height for vertical line
+        verticalLineC4.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+        verticalLineC4.style.transform = 'translateX(-50%)';
+        verticalLineC4.style.boxShadow = '0 0 5px rgba(255, 255, 255, 0.5)';
+        lineContainer.appendChild(verticalLineC4);
+
+        // Vertical line at C5
+        const verticalLineC5 = document.createElement('div');
+        verticalLineC5.style.position = 'absolute';
+        verticalLineC5.style.left = `${calibrationPoints[1].x}px`;
+        verticalLineC5.style.top = `${calibrationPoints[1].y - 50}px`; // Start 50px above the point
+        verticalLineC5.style.width = '4px';
+        verticalLineC5.style.height = '100px'; // Fixed height for vertical line
+        verticalLineC5.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+        verticalLineC5.style.transform = 'translateX(-50%)';
+        verticalLineC5.style.boxShadow = '0 0 5px rgba(255, 255, 255, 0.5)';
+        lineContainer.appendChild(verticalLineC5);
+
+        // Connection points
+        const createConnectionPoint = (x, y) => {
+            const point = document.createElement('div');
+            point.style.position = 'absolute';
+            point.style.left = `${x}px`;
+            point.style.top = `${y}px`;
+            point.style.width = '12px';
+            point.style.height = '12px';
+            point.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+            point.style.borderRadius = '50%';
+            point.style.transform = 'translate(-50%, -50%)';
+            point.style.boxShadow = '0 0 8px rgba(255, 255, 255, 0.8)';
+            point.style.zIndex = '100'; // Ensure points are above lines
+            return point;
+        };
+
+        // Add connection points at C4 and C5
+        lineContainer.appendChild(createConnectionPoint(calibrationPoints[0].x, calibrationPoints[0].y));
+        lineContainer.appendChild(createConnectionPoint(calibrationPoints[1].x, calibrationPoints[1].y));
+
+        // Add song playback functionality
+        let isPlaying = false;
+        let highlightedKey = null;
+
+        function highlightKey(note) {
+            // Remove previous highlight if exists
+            if (highlightedKey) {
+                highlightedKey.style.boxShadow = '';
+                highlightedKey.style.backgroundColor = '';
+            }
+
+            // Find the key element for the current note
+            const keyElement = document.querySelector(`[data-key="${note}"]`);
+            if (keyElement) {
+                keyElement.style.boxShadow = '0 0 20px #4ECDC4';
+                keyElement.style.backgroundColor = 'rgba(78, 205, 196, 0.3)';
+                highlightedKey = keyElement;
+            }
+        }
+
+        function playSong(songName) {
+            if (!songs[songName]) {
+                console.error('Song not found:', songName);
+                return;
+            }
+            
+            currentSong = songs[songName];
+            isPlaying = true;
+            currentNoteIndex = 0;
+            
+            playNextNote();
+        }
+
+        function playNextNote() {
+            if (!isPlaying || !currentSong) return;
+            
+            if (currentNoteIndex >= currentSong.notes.length) {
+                isPlaying = false;
+                if (highlightedKey) {
+                    highlightedKey.style.boxShadow = '';
+                    highlightedKey.style.backgroundColor = '';
+                    highlightedKey = null;
+                }
+                return;
+            }
+            
+            const noteData = currentSong.notes[currentNoteIndex];
+            if (noteData.note !== "R") {
+                // Convert note name to MIDI note number
+                const noteName = noteData.note.slice(0, -1);
+                const octave = parseInt(noteData.note.slice(-1));
+                const noteMap = {
+                    "C": 0, "C#": 1, "D": 2, "D#": 3,
+                    "E": 4, "F": 5, "F#": 6, "G": 7,
+                    "G#": 8, "A": 9, "A#": 10, "B": 11
+                };
+                const midiNote = noteMap[noteName] + (octave + 1) * 12;
+                
+                // Highlight the key
+                highlightKey(noteData.note);
+                
+                // Send MIDI note to server
+                if (socket.connected) {
+                    socket.emit('midi', {
+                        status: 0x90, // Note on
+                        note: midiNote,
+                        velocity: 100
+                    });
+                    
+                    // Send note off after duration
+                    setTimeout(() => {
+                        socket.emit('midi', {
+                            status: 0x80, // Note off
+                            note: midiNote,
+                            velocity: 0
+                        });
+                        // Remove highlight after note duration
+                        if (highlightedKey) {
+                            highlightedKey.style.boxShadow = '';
+                            highlightedKey.style.backgroundColor = '';
+                            highlightedKey = null;
+                        }
+                    }, noteData.duration * 1000);
+                }
+            }
+            
+            currentNoteIndex++;
+            setTimeout(playNextNote, noteData.duration * 1000);
+        }
+
+        function stopSong() {
+            isPlaying = false;
+            currentSong = null;
+            currentNoteIndex = 0;
+            if (highlightedKey) {
+                highlightedKey.style.boxShadow = '';
+                highlightedKey.style.backgroundColor = '';
+                highlightedKey = null;
+            }
+        }
+
+        // Remove automatic loading of songs
+        // loadAvailableSongs();
+
+        const songSelectButton = document.getElementById('songSelectButton');
+        const songSelectDropdown = document.getElementById('songSelectDropdown');
+
+        // Initialize song select button and dropdown
+        if (songSelectButton && songSelectDropdown) {
+            // Add click event listener for song selection button
+            songSelectButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                updateStatus('Song select button clicked');
+                
+                // Toggle dropdown visibility
+                const isActive = songSelectDropdown.classList.contains('active');
+                songSelectDropdown.classList.toggle('active');
+                updateStatus(`Dropdown ${isActive ? 'closed' : 'opened'}`);
+                
+                // If dropdown is now active, load songs
+                if (!isActive) {
+                    updateStatus('Loading songs...');
+                    loadAvailableSongs();
+                }
+            });
+
+            // Add click outside handler to close dropdown
+            document.addEventListener('click', function(e) {
+                if (!songSelectButton.contains(e.target) && !songSelectDropdown.contains(e.target)) {
+                    songSelectDropdown.classList.remove('active');
+                    updateStatus('Dropdown closed');
+                }
+            });
+
+            // Make sure the button is visible after calibration
+            const showSongSelectButton = function() {
+                songSelectButton.style.display = 'flex';
+                updateStatus('Song select button is now visible');
+            };
+
+            // Add the showSongSelectButton function to the global scope
+            window.showSongSelectButton = showSongSelectButton;
+        } else {
+            console.error('Song select elements not found');
+            updateStatus('Error: Song selection elements not found', true);
+        }
+
+        // Function to load available songs
+        async function loadAvailableSongs() {
+            const status = document.getElementById('status');
+            status.textContent = 'Loading songs...';
+            
+            try {
+                const response = await fetch('/get_songs');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const songs = await response.json();
+                status.textContent = `Found ${songs.length} songs`;
+                
+                const dropdown = document.getElementById('songSelectDropdown');
+                if (!dropdown) {
+                    throw new Error('Song selection dropdown not found');
+                }
+                
+                // Add sorting controls
+                dropdown.innerHTML = `
+                    <h3>Select a song</h3>
+                    <div class="sort-controls">
+                        <button class="sort-button" data-sort="title">Title</button>
+                        <button class="sort-button" data-sort="difficulty">Difficulty</button>
+                        <button class="sort-button" data-sort="tempo">Tempo</button>
+                    </div>
+                `;
+
+                // Add click handlers for sort buttons
+                const sortButtons = dropdown.querySelectorAll('.sort-button');
+                sortButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        // Remove active class from all buttons
+                        sortButtons.forEach(btn => btn.classList.remove('active'));
+                        // Add active class to clicked button
+                        button.classList.add('active');
+                        // Sort songs
+                        const sortBy = button.dataset.sort;
+                        songs.sort((a, b) => {
+                            if (sortBy === 'title') {
+                                return a.title.localeCompare(b.title);
+                            } else {
+                                return a[sortBy] - b[sortBy];
+                            }
+                        });
+                        // Update display
+                        displaySongs(songs);
+                    });
+                });
+                
+                // Initial display of songs
+                displaySongs(songs);
+                
+                status.textContent = 'Songs loaded successfully';
+            } catch (err) {
+                status.textContent = 'Error loading songs: ' + err.message;
+                status.className = 'status error';
+            }
+        }
+
+        // Function to display songs
+        function displaySongs(songs) {
+            const dropdown = document.getElementById('songSelectDropdown');
+            const songsContainer = document.createElement('div');
+            
+            songs.forEach(song => {
+                const option = document.createElement('div');
+                option.className = 'song-option';
+                option.innerHTML = `
+                    <div class="song-title">${song.title}</div>
+                    <div class="song-details">
+                        Difficulty: ${song.difficulty} | Tempo: ${song.tempo} BPM | Time: ${song.time_signature} | Key: ${song.key}
+                    </div>
+                `;
+                option.onclick = () => {
+                    const status = document.getElementById('status');
+                    status.textContent = `Loading ${song.title}...`;
+                    selectSong(song);
+                    dropdown.classList.remove('active');
+                };
+                songsContainer.appendChild(option);
+            });
+            
+            // Replace existing songs with new sorted list
+            const existingSongs = dropdown.querySelector('.sort-controls').nextSibling;
+            if (existingSongs) {
+                existingSongs.remove();
+            }
+            dropdown.appendChild(songsContainer);
+        }
+
+        // Add this at the start of your script section
+        function handleSongSelectClick(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Force a visual change to confirm click
+            const button = document.getElementById('songSelectButton');
+            button.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+            setTimeout(() => {
+                button.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            }, 200);
+            
+            // Show immediate feedback
+            const status = document.getElementById('status');
+            status.textContent = 'Button clicked!';
+            status.style.display = 'block';
+            status.style.opacity = '1';
+            
+            // Toggle dropdown
+            const dropdown = document.getElementById('songSelectDropdown');
+            dropdown.classList.toggle('active');
+            
+            // Load songs if dropdown is now active
+            if (dropdown.classList.contains('active')) {
+                loadAvailableSongs();
+            }
+        }
     </script>
 </body>
 </html> 
